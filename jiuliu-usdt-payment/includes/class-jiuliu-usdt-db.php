@@ -6,6 +6,9 @@ if (!defined('ABSPATH')) {
 
 class JIULIU_USDT_DB
 {
+    private $plugin_schema_status;
+    private $transactional_settlement_tables;
+
     public function invoices_table()
     {
         global $wpdb;
@@ -53,6 +56,7 @@ class JIULIU_USDT_DB
             actual_amount decimal(20,6) DEFAULT NULL,
             block_timestamp bigint(20) unsigned DEFAULT NULL,
             public_token_hash char(64) NOT NULL,
+            previous_public_token_hash char(64) DEFAULT NULL,
             created_at datetime NOT NULL,
             expires_at datetime NOT NULL,
             paid_at datetime DEFAULT NULL,
@@ -69,7 +73,7 @@ class JIULIU_USDT_DB
             KEY user_id (user_id),
             KEY status_expires (status,expires_at),
             KEY created_at (created_at)
-        ) {$charset_collate};";
+        ) ENGINE=InnoDB {$charset_collate};";
 
         $sql_logs = "CREATE TABLE {$logs} (
             id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
@@ -85,12 +89,142 @@ class JIULIU_USDT_DB
             KEY event (event),
             KEY level_created (level,created_at),
             KEY created_at (created_at)
-        ) {$charset_collate};";
+        ) ENGINE=InnoDB {$charset_collate};";
 
         dbDelta($sql_invoices);
         dbDelta($sql_logs);
 
+        // dbDelta() does not throw when an ALTER is rejected. Never mark the
+        // migration complete until the live database contains every financial
+        // column and uniqueness constraint required by this release.
+        $this->plugin_schema_status = null;
+        $this->transactional_settlement_tables = null;
+        $schema_status = $this->plugin_schema_is_ready(true);
+        if (is_wp_error($schema_status)) {
+            return $schema_status;
+        }
+
         update_option('jiuliu_usdt_db_version', JIULIU_USDT_DB_VERSION, false);
+        return true;
+    }
+
+    /**
+     * Verify the installed schema after dbDelta and before exposing the
+     * gateway. A failed update keeps the old DB version so the next request can
+     * retry after permissions or storage have been repaired.
+     */
+    public function plugin_schema_is_ready($refresh = false)
+    {
+        global $wpdb;
+
+        if (!$refresh && null !== $this->plugin_schema_status) {
+            return $this->plugin_schema_status;
+        }
+
+        $required = array(
+            $this->invoices_table() => array(
+                'id', 'invoice_no', 'payment_id', 'zibll_order_num', 'user_id',
+                'local_amount', 'local_currency', 'rate', 'rate_source', 'markup',
+                'usdt_amount', 'expected_raw', 'receive_address', 'contract_address',
+                'network', 'status', 'active_key', 'txid', 'submitted_txid',
+                'from_address', 'actual_raw', 'actual_amount', 'block_timestamp',
+                'public_token_hash', 'previous_public_token_hash', 'created_at',
+                'expires_at', 'paid_at', 'last_checked_at', 'updated_at',
+                'error_code', 'note',
+            ),
+            $this->logs_table() => array(
+                'id', 'invoice_id', 'user_id', 'level', 'event', 'message',
+                'context', 'created_at',
+            ),
+        );
+
+        foreach ($required as $table => $required_columns) {
+            $engine = $wpdb->get_var($wpdb->prepare(
+                'SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+                $table
+            ));
+            if ('INNODB' !== strtoupper((string) $engine)) {
+                return $this->cache_schema_error(
+                    'plugin_schema_table_missing_or_not_innodb',
+                    sprintf(__('数据表 %s 不存在或不是 InnoDB；数据库升级尚未完成。', 'jiuliu-usdt-payment'), $table)
+                );
+            }
+
+            $columns = array_map('strtolower', (array) $wpdb->get_col($wpdb->prepare(
+                'SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+                $table
+            )));
+            $missing = array_values(array_diff($required_columns, $columns));
+            if ($missing) {
+                return $this->cache_schema_error(
+                    'plugin_schema_columns_missing',
+                    sprintf(
+                        __('数据表 %1$s 缺少字段：%2$s；数据库升级尚未完成。', 'jiuliu-usdt-payment'),
+                        $table,
+                        implode(', ', $missing)
+                    )
+                );
+            }
+        }
+
+        $index_rows = (array) $wpdb->get_results($wpdb->prepare(
+            'SELECT INDEX_NAME, NON_UNIQUE, COLUMN_NAME, SEQ_IN_INDEX
+             FROM information_schema.STATISTICS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s
+             ORDER BY INDEX_NAME, SEQ_IN_INDEX',
+            $this->invoices_table()
+        ), ARRAY_A);
+        $indexes = array();
+        foreach ($index_rows as $row) {
+            // mysqlnd commonly preserves the SELECT identifier case while
+            // some drivers normalize associative keys. Accept both forms so
+            // a healthy schema is not hidden merely because of the PHP driver.
+            $name_value = isset($row['INDEX_NAME']) ? $row['INDEX_NAME'] : (isset($row['index_name']) ? $row['index_name'] : '');
+            $sequence_value = isset($row['SEQ_IN_INDEX']) ? $row['SEQ_IN_INDEX'] : (isset($row['seq_in_index']) ? $row['seq_in_index'] : 0);
+            $non_unique_value = isset($row['NON_UNIQUE']) ? $row['NON_UNIQUE'] : (isset($row['non_unique']) ? $row['non_unique'] : 1);
+            $column_value = isset($row['COLUMN_NAME']) ? $row['COLUMN_NAME'] : (isset($row['column_name']) ? $row['column_name'] : '');
+            $name = strtolower((string) $name_value);
+            $sequence = absint($sequence_value);
+            if (!$name || !$sequence) {
+                continue;
+            }
+            if (!isset($indexes[$name])) {
+                $indexes[$name] = array(
+                    'non_unique' => absint($non_unique_value),
+                    'columns'    => array(),
+                );
+            }
+            $indexes[$name]['columns'][$sequence] = strtolower((string) $column_value);
+        }
+
+        foreach (array('invoice_no', 'zibll_order_num', 'active_key', 'txid') as $critical_column) {
+            $found = false;
+            foreach ($indexes as $index) {
+                ksort($index['columns']);
+                if (0 === (int) $index['non_unique'] && array($critical_column) === array_values($index['columns'])) {
+                    $found = true;
+                    break;
+                }
+            }
+            if (!$found) {
+                return $this->cache_schema_error(
+                    'plugin_schema_unique_index_missing',
+                    sprintf(
+                        __('USDT 支付单表缺少字段 %s 的单列唯一索引；为防止重复结算，网关已停止。', 'jiuliu-usdt-payment'),
+                        $critical_column
+                    )
+                );
+            }
+        }
+
+        $this->plugin_schema_status = true;
+        return true;
+    }
+
+    private function cache_schema_error($code, $message)
+    {
+        $this->plugin_schema_status = new WP_Error($code, $message);
+        return $this->plugin_schema_status;
     }
 
     public function insert_invoice($data)
@@ -171,6 +305,29 @@ class JIULIU_USDT_DB
         $wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)', $name));
     }
 
+    /**
+     * Serialize all settlement attempts for one Zibll parent payment. Quote
+     * creation has a separate lock because opening a cashier must not release
+     * or accidentally share ownership with a running financial settlement.
+     */
+    public function acquire_settlement_lock($payment_id, $timeout_seconds = 3)
+    {
+        global $wpdb;
+        $name = $this->named_lock_prefix() . '_settlement_' . absint($payment_id);
+        return '1' === (string) $wpdb->get_var($wpdb->prepare(
+            'SELECT GET_LOCK(%s, %d)',
+            $name,
+            max(0, min(10, absint($timeout_seconds)))
+        ));
+    }
+
+    public function release_settlement_lock($payment_id)
+    {
+        global $wpdb;
+        $name = $this->named_lock_prefix() . '_settlement_' . absint($payment_id);
+        $wpdb->get_var($wpdb->prepare('SELECT RELEASE_LOCK(%s)', $name));
+    }
+
     private function named_lock_prefix()
     {
         // MySQL named locks are server-wide rather than database-scoped. Add a
@@ -199,17 +356,24 @@ class JIULIU_USDT_DB
      * which a user closes an order after our preflight read but immediately
      * before Zibll's settlement call (Zibll itself accepts status -1).
      */
-    public function begin_zibll_settlement_guard($payment_id)
+    public function begin_zibll_settlement_guard($payment_id, $invoice_id, $txid)
     {
         global $wpdb;
 
         $payment_id = absint($payment_id);
+        $invoice_id = absint($invoice_id);
         if (
             !$payment_id
+            || !$invoice_id
             || empty($wpdb->zibpay_payment)
             || empty($wpdb->zibpay_order)
         ) {
             return new WP_Error('zibll_tables_missing', __('找不到子比订单数据表，无法安全结算。', 'jiuliu-usdt-payment'));
+        }
+
+        $transactional = $this->settlement_tables_are_transactional();
+        if (is_wp_error($transactional)) {
+            return $transactional;
         }
 
         if (false === $wpdb->query('START TRANSACTION')) {
@@ -238,10 +402,82 @@ class JIULIU_USDT_DB
             return new WP_Error('zibll_children_missing', __('找不到子比关联子订单。', 'jiuliu-usdt-payment'));
         }
 
+        // Lock our invoice after the Zibll rows. The close-order hook touches
+        // Zibll first and our table second; keeping the same lock order avoids
+        // a close/settle deadlock while making the final state check atomic.
+        $invoice = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$this->invoices_table()}
+             WHERE id = %d FOR UPDATE",
+            $invoice_id
+        ), ARRAY_A);
+        if (!$invoice) {
+            $wpdb->query('ROLLBACK');
+            return new WP_Error('invoice_not_found', __('USDT 支付单不存在，无法安全结算。', 'jiuliu-usdt-payment'));
+        }
+
         return array(
             'payment' => $payment,
             'children'=> $children,
+            'invoice' => $invoice,
+            'txid'    => strtolower((string) $txid),
         );
+    }
+
+    /**
+     * FOR UPDATE and rollback are only meaningful for transactional tables.
+     * Fail closed rather than silently running an unsafe pseudo-transaction.
+     */
+    public function settlement_tables_are_transactional()
+    {
+        global $wpdb;
+
+        if (null !== $this->transactional_settlement_tables) {
+            return $this->transactional_settlement_tables;
+        }
+
+        $plugin_schema = $this->plugin_schema_is_ready();
+        if (is_wp_error($plugin_schema)) {
+            $this->transactional_settlement_tables = $plugin_schema;
+            return $this->transactional_settlement_tables;
+        }
+
+        $order_meta = !empty($wpdb->zibpay_order_meta)
+            ? $wpdb->zibpay_order_meta
+            : $wpdb->prefix . 'zibpay_ordermeta';
+        $tables = array(
+            $this->invoices_table(),
+            isset($wpdb->zibpay_payment) ? $wpdb->zibpay_payment : '',
+            isset($wpdb->zibpay_order) ? $wpdb->zibpay_order : '',
+            $order_meta,
+        );
+
+        foreach ($tables as $table) {
+            if (!$table) {
+                $this->transactional_settlement_tables = new WP_Error(
+                    'zibll_tables_missing',
+                    __('找不到完整的子比结算数据表，自动结算已停止。', 'jiuliu-usdt-payment')
+                );
+                return $this->transactional_settlement_tables;
+            }
+
+            $engine = $wpdb->get_var($wpdb->prepare(
+                'SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s',
+                $table
+            ));
+            if ('INNODB' !== strtoupper((string) $engine)) {
+                $this->transactional_settlement_tables = new WP_Error(
+                    'non_transactional_settlement_table',
+                    sprintf(
+                        __('数据表 %s 不是 InnoDB，无法保证关闭订单与到账结算的一致性；自动结算已停止。', 'jiuliu-usdt-payment'),
+                        $table
+                    )
+                );
+                return $this->transactional_settlement_tables;
+            }
+        }
+
+        $this->transactional_settlement_tables = true;
+        return true;
     }
 
     public function commit_zibll_settlement_guard()
@@ -261,7 +497,9 @@ class JIULIU_USDT_DB
         global $wpdb;
         return 1 === $wpdb->query($wpdb->prepare(
             "UPDATE {$this->invoices_table()}
-             SET zibll_order_num = %s, public_token_hash = %s,
+             SET zibll_order_num = %s,
+                 previous_public_token_hash = public_token_hash,
+                 public_token_hash = %s,
                  last_checked_at = NULL, updated_at = %s
              WHERE id = %d AND status = 'pending' AND expires_at >= %s",
             (string) $order_num,
@@ -270,6 +508,30 @@ class JIULIU_USDT_DB
             absint($id),
             JIULIU_USDT_Util::utc_now_mysql()
         ));
+    }
+
+    public function rotate_invoice_public_token($id, $token_hash)
+    {
+        global $wpdb;
+        return 1 === $wpdb->query($wpdb->prepare(
+            "UPDATE {$this->invoices_table()}
+             SET previous_public_token_hash = public_token_hash,
+                 public_token_hash = %s, last_checked_at = NULL, updated_at = %s
+             WHERE id = %d AND status = 'pending'",
+            (string) $token_hash,
+            JIULIU_USDT_Util::utc_now_mysql(),
+            absint($id)
+        ));
+    }
+
+    public function get_active_expected_raws($address)
+    {
+        global $wpdb;
+        return array_map('strval', (array) $wpdb->get_col($wpdb->prepare(
+            "SELECT expected_raw FROM {$this->invoices_table()}
+             WHERE receive_address = %s AND active_key IS NOT NULL",
+            (string) $address
+        )));
     }
 
     public function update_invoice($id, $data)
@@ -313,6 +575,26 @@ class JIULIU_USDT_DB
         ));
     }
 
+    /**
+     * Theme success hooks can send mail or fulfil stock outside MySQL. When an
+     * exception or ambiguous COMMIT happens after entering those hooks, force a
+     * visible review state and never allow an automatic replay.
+     */
+    public function mark_settlement_uncertain($id, $txid, $note)
+    {
+        global $wpdb;
+        return 1 === $wpdb->query($wpdb->prepare(
+            "UPDATE {$this->invoices_table()}
+             SET status = 'review', error_code = 'zibll_settlement_uncertain',
+                 note = %s, updated_at = %s
+             WHERE id = %d AND status IN ('processing','paid') AND txid = %s",
+            sanitize_text_field($note),
+            JIULIU_USDT_Util::utc_now_mysql(),
+            absint($id),
+            strtolower((string) $txid)
+        ));
+    }
+
     public function reject_invoice($id)
     {
         global $wpdb;
@@ -320,7 +602,8 @@ class JIULIU_USDT_DB
             "UPDATE {$this->invoices_table()}
              SET status = 'rejected', error_code = 'admin_rejected',
                  note = %s, updated_at = %s
-             WHERE id = %d AND status IN ('pending','expired','review','superseded','closed','closed_no_monitor')",
+             WHERE id = %d AND status IN ('pending','expired','review','superseded','closed','closed_no_monitor')
+               AND (error_code IS NULL OR error_code <> 'zibll_settlement_uncertain')",
             __('管理员已拒绝此支付单。', 'jiuliu-usdt-payment'),
             JIULIU_USDT_Util::utc_now_mysql(),
             absint($id)
@@ -340,7 +623,7 @@ class JIULIU_USDT_DB
         ));
     }
 
-    public function claim_invoice($id, $txid, $transfer, $allowed_statuses)
+    public function claim_invoice($id, $txid, $transfer, $allowed_statuses, $preserve_error_code = false)
     {
         global $wpdb;
 
@@ -359,12 +642,21 @@ class JIULIU_USDT_DB
         $from = isset($transfer['from']) ? substr(sanitize_text_field($transfer['from']), 0, 64) : null;
         $block_timestamp = isset($transfer['block_timestamp']) ? (string) absint($transfer['block_timestamp']) : null;
 
+        $error_assignment = $preserve_error_code ? 'error_code = error_code' : 'error_code = NULL';
+        // The invoice snapshot held by a caller can become stale. Enforce the
+        // high-risk replay barrier in the same atomic UPDATE that claims txid
+        // ownership, so an ordinary worker can never clear an uncertainty
+        // marker written by a competing settlement attempt.
+        $uncertain_predicate = $preserve_error_code
+            ? "error_code = 'zibll_settlement_uncertain'"
+            : "(error_code IS NULL OR error_code <> 'zibll_settlement_uncertain')";
         $sql = $wpdb->prepare(
             "UPDATE {$this->invoices_table()}
              SET status = 'processing', txid = %s, from_address = %s, actual_raw = %s,
-                 actual_amount = %s, block_timestamp = %s, updated_at = %s, error_code = NULL
+                  actual_amount = %s, block_timestamp = %s, updated_at = %s, {$error_assignment}
              WHERE id = %d AND status IN (" . implode(',', $allowed) . ")
-               AND (txid IS NULL OR txid = %s)",
+               AND (txid IS NULL OR txid = %s)
+               AND {$uncertain_predicate}",
             strtolower($txid),
             $from,
             $actual_raw,
@@ -485,6 +777,31 @@ class JIULIU_USDT_DB
         ));
     }
 
+    /**
+     * Apply the administrator's monitoring switch to already-closed invoices,
+     * not only to orders closed after the setting changed.
+     */
+    public function sync_closed_monitoring($monitor)
+    {
+        global $wpdb;
+
+        $from = $monitor ? 'closed_no_monitor' : 'closed';
+        $to = $monitor ? 'closed' : 'closed_no_monitor';
+        $note = $monitor
+            ? __('管理员已开启关闭订单到账观察；观察期内发现到账只转人工，不会自动发货。', 'jiuliu-usdt-payment')
+            : __('管理员已关闭关闭订单到账观察；此类支付单停止自动链上查询，可手工核验交易哈希。', 'jiuliu-usdt-payment');
+
+        return $wpdb->query($wpdb->prepare(
+            "UPDATE {$this->invoices_table()}
+             SET status = %s, note = %s, updated_at = %s
+             WHERE status = %s AND txid IS NULL",
+            $to,
+            $note,
+            JIULIU_USDT_Util::utc_now_mysql(),
+            $from
+        ));
+    }
+
     public function payment_ids_due_for_zibll_close($limit = 500)
     {
         global $wpdb;
@@ -517,7 +834,7 @@ class JIULIU_USDT_DB
         $cutoff = JIULIU_USDT_Util::utc_mysql_from_timestamp(time() - max(1, absint($minutes)) * MINUTE_IN_SECONDS);
         return $wpdb->query($wpdb->prepare(
             "UPDATE {$this->invoices_table()}
-             SET status = 'review', error_code = 'processing_timeout',
+             SET status = 'review', error_code = 'zibll_settlement_uncertain',
                  note = %s, updated_at = %s
              WHERE status = 'processing' AND updated_at < %s",
             __('结算进程中断，已转人工核对；请先检查子比权益是否已经发放。', 'jiuliu-usdt-payment'),
@@ -574,9 +891,20 @@ class JIULIU_USDT_DB
             return array();
         }
 
-        $blocked = array('api_key', 'trongrid_api_key', 'cron_token', 'token', 'public_token');
+        $blocked = array(
+            'api_key', 'trongrid_api_key', 'cron_token', 'token', 'public_token',
+            'authorization', 'secret', 'password', 'x-cg-demo-api-key', 'tron-pro-api-key',
+        );
         foreach ($context as $key => $value) {
-            if (in_array(strtolower((string) $key), $blocked, true)) {
+            $normalized_key = strtolower((string) $key);
+            $is_secret = false;
+            foreach ($blocked as $blocked_key) {
+                if (false !== strpos($normalized_key, $blocked_key)) {
+                    $is_secret = true;
+                    break;
+                }
+            }
+            if ($is_secret) {
                 $context[$key] = '[redacted]';
             } elseif (is_array($value)) {
                 $context[$key] = $this->sanitize_log_context($value);

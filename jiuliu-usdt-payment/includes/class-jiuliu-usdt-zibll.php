@@ -14,6 +14,7 @@ class JIULIU_USDT_Zibll
     private $invoices;
     private $registered = false;
     private $created_order_ids = array();
+    private $initiate_payment_locks = array();
 
     public function __construct(JIULIU_USDT_Settings $settings, JIULIU_USDT_DB $db, JIULIU_USDT_Invoices $invoices)
     {
@@ -36,6 +37,14 @@ class JIULIU_USDT_Zibll
         add_action('order_created', array($this, 'remember_created_order'), 1, 1);
         add_action('order_closed', array($this, 'handle_order_closed'), 20, 3);
 
+        // Zibll refreshes payment.order_num (and may change method) before it
+        // reaches the gateway filter, without a status predicate. Serialize the
+        // whole initiate request with final settlement so a stale cashier
+        // request cannot overwrite a just-paid parent row.
+        add_action('wp_ajax_initiate_pay', array($this, 'lock_initiate_payment'), 6);
+        add_action('wp_ajax_nopriv_initiate_pay', array($this, 'lock_initiate_payment'), 6);
+        add_action('shutdown', array($this, 'release_initiate_payment_locks'), PHP_INT_MAX);
+
         add_filter('user_order_details_footer_left', array($this, 'append_order_proof_footer'), 30, 2);
         add_filter('user_order_details_modal', array($this, 'append_shop_order_proof'), 99, 3);
 
@@ -55,7 +64,11 @@ class JIULIU_USDT_Zibll
 
     public function add_payment_method($methods, $pay_type)
     {
-        if (!$this->settings->is_enabled() || !$this->is_zibll_template()) {
+        if (
+            !$this->settings->is_enabled()
+            || !$this->is_zibll_template()
+            || is_wp_error($this->db->settlement_tables_are_transactional())
+        ) {
             return $methods;
         }
 
@@ -76,6 +89,14 @@ class JIULIU_USDT_Zibll
 
     public function initiate_payment($order_data)
     {
+        $transactional_tables = $this->db->settlement_tables_are_transactional();
+        if (is_wp_error($transactional_tables)) {
+            return array(
+                'error' => 1,
+                'msg'   => $transactional_tables->get_error_message(),
+            );
+        }
+
         $authorized = $this->authorize_initiate($order_data);
         if (is_wp_error($authorized)) {
             return array(
@@ -121,6 +142,72 @@ class JIULIU_USDT_Zibll
         if (!empty($order['id'])) {
             $this->created_order_ids[absint($order['id'])] = true;
         }
+    }
+
+    public function lock_initiate_payment()
+    {
+        $raw_payment_id = isset($_REQUEST['payment_id']) ? wp_unslash($_REQUEST['payment_id']) : '';
+        $payment_id = is_scalar($raw_payment_id) ? absint($raw_payment_id) : 0;
+        if (!$payment_id || !empty($this->initiate_payment_locks[$payment_id])) {
+            return;
+        }
+
+        // Terminal orders are safe to leave to the theme because it returns
+        // them before refreshing order_num. Every pending initiate request is
+        // serialized, including other->other: otherwise such a request could
+        // race an other->USDT transition while the latter holds our lock.
+        if (!class_exists('ZibPay') || !is_callable(array('ZibPay', 'get_payment'))) {
+            return;
+        }
+        $raw_requested_method = isset($_REQUEST['payment_method']) ? wp_unslash($_REQUEST['payment_method']) : '';
+        $requested_method = is_scalar($raw_requested_method) ? sanitize_key($raw_requested_method) : '';
+        $payment = (array) ZibPay::get_payment($payment_id);
+        if (!$payment || !isset($payment['status']) || '0' !== (string) $payment['status']) {
+            return;
+        }
+        if (!$this->db->acquire_settlement_lock($payment_id, 10)) {
+            wp_send_json_error(array(
+                'code' => 'jiuliu_usdt_payment_busy',
+                'msg'  => __('该订单正在确认 USDT 到账，请稍后刷新，暂时不要切换支付方式。', 'jiuliu-usdt-payment'),
+            ), 409);
+            return;
+        }
+
+        $this->initiate_payment_locks[$payment_id] = true;
+
+        // Zibll's AJAX handler refreshes order_num and may switch method before
+        // it reaches our gateway filter. Its own handler does not verify order
+        // ownership first, so protect every request entering or leaving USDT
+        // while the settlement lock is held.
+        $payment = (array) ZibPay::get_payment($payment_id);
+        if (!$payment || !isset($payment['status']) || '0' !== (string) $payment['status']) {
+            $this->db->release_settlement_lock($payment_id);
+            unset($this->initiate_payment_locks[$payment_id]);
+            return;
+        }
+
+        $current_method = isset($payment['method']) ? sanitize_key((string) $payment['method']) : '';
+        if (self::METHOD !== $current_method && self::METHOD !== $requested_method) {
+            // Keep the lifecycle lock until shutdown so a concurrent request
+            // cannot enter USDT while this theme handler mutates the parent.
+            return;
+        }
+
+        $authorized = $this->authorize_initiate(array('payment_id' => $payment_id));
+        if (is_wp_error($authorized)) {
+            wp_send_json_error(array(
+                'code' => 'jiuliu_usdt_payment_forbidden',
+                'msg'  => $authorized->get_error_message(),
+            ), 403);
+        }
+    }
+
+    public function release_initiate_payment_locks()
+    {
+        foreach (array_keys($this->initiate_payment_locks) as $payment_id) {
+            $this->db->release_settlement_lock($payment_id);
+        }
+        $this->initiate_payment_locks = array();
     }
 
     private function authorize_initiate($order_data)
@@ -355,19 +442,80 @@ class JIULIU_USDT_Zibll
 
     public function preflight_check_pay()
     {
-        $check_sdk = isset($_REQUEST['check_sdk']) ? sanitize_key(wp_unslash($_REQUEST['check_sdk'])) : '';
+        if ($this->settings->get('pause_monitoring', 0)) {
+            return;
+        }
+
+        $method = isset($_SERVER['REQUEST_METHOD']) ? strtoupper(sanitize_text_field(wp_unslash($_SERVER['REQUEST_METHOD']))) : '';
+        $action = isset($_POST['action']) ? sanitize_key(wp_unslash($_POST['action'])) : '';
+        if ('POST' !== $method || 'check_pay' !== $action) {
+            return;
+        }
+
+        $check_sdk = isset($_POST['check_sdk']) ? sanitize_key(wp_unslash($_POST['check_sdk'])) : '';
         if (self::SDK !== $check_sdk) {
             return;
         }
 
-        $order_num = isset($_REQUEST['order_num']) ? sanitize_text_field(wp_unslash($_REQUEST['order_num'])) : '';
+        $order_num = isset($_POST['order_num']) ? sanitize_text_field(wp_unslash($_POST['order_num'])) : '';
         if (!$order_num) {
+            return;
+        }
+
+        $invoice = $this->db->get_by_order_num($order_num);
+        $allowed_statuses = array('pending', 'expired');
+        if ($this->settings->get('monitor_closed_orders', 1)) {
+            $allowed_statuses[] = 'closed';
+        }
+        if (!$invoice || !in_array($invoice->status, $allowed_statuses, true)) {
+            return;
+        }
+
+        if (!empty($invoice->last_checked_at)) {
+            $last_checked = JIULIU_USDT_Util::utc_timestamp_from_mysql($invoice->last_checked_at);
+            if ($last_checked > time() - 8) {
+                return;
+            }
+        }
+
+        if (JIULIU_USDT_Trongrid::backoff_remaining() > 0 || !$this->consume_preflight_scan_budget()) {
             return;
         }
 
         // Do not emit a response here. Zibll's own handler runs immediately
         // afterwards and returns its canonical status JSON to pay.js.
         $this->invoices->check_order($order_num, false);
+    }
+
+    /**
+     * Apply a soft global/IP budget before a public poll can reach TronGrid.
+     * The database compare-and-set in check_order remains the atomic guard.
+     */
+    private function consume_preflight_scan_budget()
+    {
+        $window = (int) floor(time() / MINUTE_IN_SECONDS);
+        $global_limit = (int) apply_filters('jiuliu_usdt_preflight_global_limit', 120);
+        $ip_limit = (int) apply_filters('jiuliu_usdt_preflight_ip_limit', 20);
+        $global_limit = max(1, min(1000, $global_limit));
+        $ip_limit = max(1, min(120, $ip_limit));
+
+        $ip = (string) JIULIU_USDT_Util::client_ip();
+        $ip_hash = substr(hash('sha256', $ip ? $ip : 'unknown'), 0, 20);
+        $global_key = 'jiuliu_usdt_preflight_global_' . $window;
+        $ip_key = 'jiuliu_usdt_preflight_ip_' . $window . '_' . $ip_hash;
+        $global_count = absint(get_transient($global_key));
+        $ip_count = absint(get_transient($ip_key));
+
+        if ($global_count >= $global_limit || $ip_count >= $ip_limit) {
+            return false;
+        }
+
+        // This counter is deliberately a soft availability limit. Concurrent
+        // requests are finally serialized by DB::acquire_check_slot().
+        set_transient($global_key, $global_count + 1, 2 * MINUTE_IN_SECONDS);
+        set_transient($ip_key, $ip_count + 1, 2 * MINUTE_IN_SECONDS);
+
+        return true;
     }
 
     public function enqueue_assets()
@@ -420,6 +568,14 @@ class JIULIU_USDT_Zibll
         if (!$this->has_required_api()) {
             echo '<div class="notice notice-error"><p>'
                 . esc_html__('当前 Zibll 缺少 V9 支付扩展接口（ZibPay::payment_order 或支付函数）。请确认主题为完整的 Zibll 9.0。', 'jiuliu-usdt-payment')
+                . '</p></div>';
+            return;
+        }
+
+        $transactional_tables = $this->db->settlement_tables_are_transactional();
+        if (is_wp_error($transactional_tables)) {
+            echo '<div class="notice notice-error"><p>'
+                . esc_html($transactional_tables->get_error_message())
                 . '</p></div>';
         }
     }

@@ -31,6 +31,7 @@ class JIULIU_USDT_Admin
         add_action('admin_post_jiuliu_usdt_test_api', array($this, 'test_api'));
         add_action('admin_post_jiuliu_usdt_test_rate', array($this, 'test_rate'));
         add_action('admin_post_jiuliu_usdt_run_scan', array($this, 'run_scan'));
+        add_action('admin_post_jiuliu_usdt_rotate_cron_token', array($this, 'rotate_cron_token'));
         add_action('admin_post_jiuliu_usdt_check_invoice', array($this, 'check_invoice'));
         add_action('admin_post_jiuliu_usdt_verify_invoice', array($this, 'verify_invoice'));
         add_action('admin_post_jiuliu_usdt_reject_invoice', array($this, 'reject_invoice'));
@@ -145,10 +146,40 @@ class JIULIU_USDT_Admin
     {
         $this->require_admin_action('jiuliu_usdt_save_settings');
         $input = isset($_POST['settings']) && is_array($_POST['settings']) ? $_POST['settings'] : array();
+        $old_settings = $this->settings->all();
+        $old_monitor_closed = (bool) $this->settings->get('monitor_closed_orders', 1);
         $result = $this->settings->update($input);
         if (is_wp_error($result)) {
             $this->set_notice($result->get_error_message(), 'error');
         } else {
+            $new_monitor_closed = !empty($result['monitor_closed_orders']);
+            if ($new_monitor_closed !== $old_monitor_closed) {
+                $changed = $this->db->sync_closed_monitoring($new_monitor_closed);
+                if (false === $changed) {
+                    update_option(JIULIU_USDT_Settings::OPTION_NAME, $old_settings, false);
+                    delete_transient('jiuliu_usdt_auto_rate');
+                    $this->db->log(
+                        'closed_monitor_mode_change_failed',
+                        __('关闭订单到账观察切换失败，全部设置已恢复为保存前状态。', 'jiuliu-usdt-payment'),
+                        0,
+                        'error',
+                        array(),
+                        get_current_user_id()
+                    );
+                    $this->set_notice(__('数据库未能同步关闭订单的监控状态；本次设置没有生效，请检查数据库后重试。', 'jiuliu-usdt-payment'), 'error');
+                    $this->redirect('settings');
+                }
+                $this->db->log(
+                    'closed_monitor_mode_changed',
+                    $new_monitor_closed
+                        ? __('管理员开启了关闭订单到账观察。', 'jiuliu-usdt-payment')
+                        : __('管理员关闭了关闭订单到账观察。', 'jiuliu-usdt-payment'),
+                    0,
+                    'warning',
+                    array('affected_invoices' => (int) $changed),
+                    get_current_user_id()
+                );
+            }
             $this->db->log('settings_saved', __('管理员更新了 USDT 收款设置。', 'jiuliu-usdt-payment'), 0, 'info', array(), get_current_user_id());
             $this->set_notice(__('设置已保存。', 'jiuliu-usdt-payment'));
         }
@@ -183,6 +214,28 @@ class JIULIU_USDT_Admin
     {
         $this->require_admin_action('jiuliu_usdt_run_scan');
         $result = jiuliu_usdt_payment()->cron->run();
+        if (!empty($result['error'])) {
+            $this->set_notice(sprintf(__('扫描失败：%s', 'jiuliu-usdt-payment'), $result['error']), 'error');
+            $this->redirect('orders');
+        }
+        if (!empty($result['paused'])) {
+            $this->set_notice(__('链上监控处于紧急暂停状态，本次没有扫描。', 'jiuliu-usdt-payment'), 'warning');
+            $this->redirect('orders');
+        }
+        if (!empty($result['busy'])) {
+            $this->set_notice(__('另一轮链上扫描正在运行，本次请求未重复执行。', 'jiuliu-usdt-payment'), 'warning');
+            $this->redirect('orders');
+        }
+        if (!empty($result['partial']) || !empty($result['errors'])) {
+            $this->set_notice(sprintf(
+                __('扫描未完全成功：检查 %1$d 个支付单，完成 %2$d 个，转人工 %3$d 个，错误 %4$d 个。请查看日志并重试。', 'jiuliu-usdt-payment'),
+                isset($result['checked']) ? $result['checked'] : 0,
+                isset($result['paid']) ? $result['paid'] : 0,
+                isset($result['review']) ? $result['review'] : 0,
+                isset($result['errors']) ? $result['errors'] : 0
+            ), 'warning');
+            $this->redirect('orders');
+        }
         $this->set_notice(sprintf(
             __('扫描完成：检查 %1$d 个支付单，完成 %2$d 个，转人工 %3$d 个。', 'jiuliu-usdt-payment'),
             isset($result['checked']) ? $result['checked'] : 0,
@@ -190,6 +243,19 @@ class JIULIU_USDT_Admin
             isset($result['review']) ? $result['review'] : 0
         ));
         $this->redirect('orders');
+    }
+
+    public function rotate_cron_token()
+    {
+        $this->require_admin_action('jiuliu_usdt_rotate_cron_token');
+        $result = $this->settings->rotate_cron_token();
+        if (is_wp_error($result)) {
+            $this->set_notice($result->get_error_message(), 'error');
+        } else {
+            $this->db->log('cron_token_rotated', __('管理员更换了外部 Cron 密钥。', 'jiuliu-usdt-payment'), 0, 'warning', array(), get_current_user_id());
+            $this->set_notice(__('Cron 密钥已更换。请立即更新服务器定时任务，旧密钥已失效。', 'jiuliu-usdt-payment'), 'warning');
+        }
+        $this->redirect('status');
     }
 
     public function check_invoice()
@@ -216,7 +282,19 @@ class JIULIU_USDT_Admin
         $this->require_admin_action('jiuliu_usdt_verify_invoice_' . $invoice_id);
         $txid = isset($_POST['txid']) ? strtolower(sanitize_text_field(wp_unslash($_POST['txid']))) : '';
         $force = !empty($_POST['force']);
-        $result = $this->invoices->verify_admin_txid($invoice_id, $txid, $force);
+        $confirm_uncertain = !empty($_POST['confirm_uncertain_settlement']);
+        $invoice = $this->db->get_invoice($invoice_id);
+        if (
+            $invoice
+            && isset($invoice->error_code)
+            && 'zibll_settlement_uncertain' === $invoice->error_code
+            && (!$confirm_uncertain || !$force)
+        ) {
+            $this->set_notice(__('此支付单的子比结算结果不确定。必须先核对权益、库存、发货和通知，并同时勾选“强制补单”与重复结算风险确认。', 'jiuliu-usdt-payment'), 'error');
+            $this->redirect('orders');
+        }
+
+        $result = $this->call_verify_admin_txid($invoice_id, $txid, $force, $confirm_uncertain);
         if (is_wp_error($result)) {
             $this->set_notice($result->get_error_message(), 'error');
         } elseif ('paid' === $result->status) {
@@ -229,10 +307,27 @@ class JIULIU_USDT_Admin
         $this->redirect('orders');
     }
 
+    private function call_verify_admin_txid($invoice_id, $txid, $force, $confirm_uncertain)
+    {
+        $method = new ReflectionMethod($this->invoices, 'verify_admin_txid');
+        if ($method->getNumberOfParameters() >= 4) {
+            return $this->invoices->verify_admin_txid($invoice_id, $txid, $force, $confirm_uncertain);
+        }
+
+        // Compatibility with an older invoices service. The administrator
+        // confirmation is still enforced above for uncertain settlements.
+        return $this->invoices->verify_admin_txid($invoice_id, $txid, $force);
+    }
+
     public function reject_invoice()
     {
         $invoice_id = isset($_POST['invoice_id']) ? absint($_POST['invoice_id']) : 0;
         $this->require_admin_action('jiuliu_usdt_reject_invoice_' . $invoice_id);
+        $invoice = $this->db->get_invoice($invoice_id);
+        if ($invoice && isset($invoice->error_code) && 'zibll_settlement_uncertain' === (string) $invoice->error_code) {
+            $this->set_notice(__('该支付单的子比结算结果不确定，不能标记为拒绝；请先核对已发权益、库存、发货和通知。', 'jiuliu-usdt-payment'), 'error');
+            $this->redirect('orders');
+        }
         if ($this->db->reject_invoice($invoice_id)) {
             $this->db->log('invoice_rejected', __('管理员拒绝了支付单。', 'jiuliu-usdt-payment'), $invoice_id, 'warning', array(), get_current_user_id());
             $this->set_notice(__('支付单已标记为拒绝。', 'jiuliu-usdt-payment'));
@@ -250,19 +345,20 @@ class JIULIU_USDT_Admin
         wp_nonce_field('jiuliu_usdt_save_settings');
 
         echo '<div class="jiuliu-usdt-card"><h2>' . esc_html__('基础收款', 'jiuliu-usdt-payment') . '</h2><table class="form-table"><tbody>';
-        $this->checkbox_row('enabled', __('启用 USDT-TRC20', 'jiuliu-usdt-payment'), $s['enabled'], __('启用后，USDT 会出现在子比原生收银台中。', 'jiuliu-usdt-payment'));
+        $this->checkbox_row('enabled', __('接受新的 USDT-TRC20 订单', 'jiuliu-usdt-payment'), $s['enabled'], __('启用后 USDT 会出现在子比收银台；关闭只阻止新报价，已经签发给用户的支付单仍会继续安全核验。', 'jiuliu-usdt-payment'));
         $this->text_row('receive_address', __('TRC20 收款地址', 'jiuliu-usdt-payment'), $s['receive_address'], 'T...', __('只填写公开收款地址，绝不要填写私钥或助记词。', 'jiuliu-usdt-payment'));
         echo '<tr><th>' . esc_html__('USDT 合约', 'jiuliu-usdt-payment') . '</th><td><code>' . esc_html(JIULIU_USDT_Settings::USDT_CONTRACT) . '</code><p class="description">' . esc_html__('TRON 主网官方 USDT 合约，插件内固定且不可修改。', 'jiuliu-usdt-payment') . '</p></td></tr>';
         $this->secret_row('trongrid_api_key', __('TronGrid API Key', 'jiuliu-usdt-payment'), $this->settings->masked_api_key('trongrid_api_key'), __('可留空，但生产环境建议配置只读 API Key 以提高查询额度。', 'jiuliu-usdt-payment'));
+        $this->number_row('trongrid_max_pages', __('TronGrid 单次最大页数', 'jiuliu-usdt-payment'), $s['trongrid_max_pages'], '1', __('允许 1 至 10 页，每页最多 200 条。该上限同时约束自动扫描和人工核验，降低异常请求的资源消耗。', 'jiuliu-usdt-payment'));
         echo '</tbody></table></div>';
 
         echo '<div class="jiuliu-usdt-card"><h2>' . esc_html__('汇率与金额', 'jiuliu-usdt-payment') . '</h2><table class="form-table"><tbody>';
         echo '<tr><th>' . esc_html__('汇率模式', 'jiuliu-usdt-payment') . '</th><td><select name="settings[rate_mode]">'
             . '<option value="fixed" ' . selected($s['rate_mode'], 'fixed', false) . '>' . esc_html__('固定汇率', 'jiuliu-usdt-payment') . '</option>'
-            . '<option value="auto" ' . selected($s['rate_mode'], 'auto', false) . '>' . esc_html__('CoinGecko 自动汇率（失败回退固定）', 'jiuliu-usdt-payment') . '</option>'
+            . '<option value="auto" ' . selected($s['rate_mode'], 'auto', false) . '>' . esc_html__('CoinGecko 市场参考汇率（失败回退固定）', 'jiuliu-usdt-payment') . '</option>'
             . '</select></td></tr>';
         $this->number_row('fixed_rate', __('固定/备用汇率', 'jiuliu-usdt-payment'), $s['fixed_rate'], '0.0001', __('每 1 USDT 对应多少人民币；安全范围 1 至 20。', 'jiuliu-usdt-payment'));
-        $this->secret_row('coingecko_api_key', __('CoinGecko Demo Key', 'jiuliu-usdt-payment'), $this->settings->masked_api_key('coingecko_api_key'), __('自动汇率可选；没有 Key 时插件会尝试公共接口。', 'jiuliu-usdt-payment'));
+        $this->secret_row('coingecko_api_key', __('CoinGecko Demo Key', 'jiuliu-usdt-payment'), $this->settings->masked_api_key('coingecko_api_key'), __('可选；没有 Key 时会尝试公共接口，也可在 wp-config.php 定义 JIULIU_USDT_COINGECKO_API_KEY。CoinGecko 是第三方市场数据，仅作报价参考，并非 Tether 官方结算汇率。', 'jiuliu-usdt-payment'));
         $this->number_row('auto_rate_max_deviation', __('自动汇率偏差熔断（%）', 'jiuliu-usdt-payment'), $s['auto_rate_max_deviation'], '0.01', __('相对备用固定汇率的最大允许偏差；允许 1% 至 30%，默认 10%。', 'jiuliu-usdt-payment'));
         $this->number_row('rate_markup', __('汇率加成（%）', 'jiuliu-usdt-payment'), $s['rate_markup'], '0.0001', __('正数增加应付 USDT，负数提供优惠；允许 -50% 至 100%。', 'jiuliu-usdt-payment'));
         $this->number_row('minimum_local_amount', __('最低订单金额', 'jiuliu-usdt-payment'), $s['minimum_local_amount'], '0.01', __('金额过低时插件会拒绝生成尾数空间不足的共享地址报价。', 'jiuliu-usdt-payment'));
@@ -270,6 +366,7 @@ class JIULIU_USDT_Admin
         echo '</tbody></table></div>';
 
         echo '<div class="jiuliu-usdt-card"><h2>' . esc_html__('核验、安全与通知', 'jiuliu-usdt-payment') . '</h2><table class="form-table"><tbody>';
+        $this->checkbox_row('pause_monitoring', __('紧急暂停全部自动监控与结算', 'jiuliu-usdt-payment'), $s['pause_monitoring'], __('仅用于故障处置。开启后现有支付单也不会被浏览器轮询或定时任务自动核验；恢复前必须人工检查是否已有用户转账。', 'jiuliu-usdt-payment'));
         $this->number_row('invoice_timeout', __('备用有效期（分钟）', 'jiuliu-usdt-payment'), $s['invoice_timeout'], '1', __('正常情况下严格使用子比原生订单截止时间；仅在主题未返回截止时间时使用此备用值。', 'jiuliu-usdt-payment'));
         $this->number_row('late_grace_hours', __('过期到账观察期（小时）', 'jiuliu-usdt-payment'), $s['late_grace_hours'], '1', __('过期到账只记录并转人工，不会自动发货。', 'jiuliu-usdt-payment'));
         $this->checkbox_row('monitor_closed_orders', __('子比订单关闭后继续观察到账', 'jiuliu-usdt-payment'), $s['monitor_closed_orders'], __('推荐启用：观察期内发现到账会转人工处理，绝不自动发货。关闭此开关可节省链上查询额度，但可能错过“先转账、后关闭”的到账。', 'jiuliu-usdt-payment'));
@@ -418,15 +515,22 @@ class JIULIU_USDT_Admin
         }
 
         if (in_array($invoice->status, array('pending', 'expired', 'review', 'superseded', 'closed', 'closed_no_monitor'), true)) {
+            $is_uncertain = isset($invoice->error_code) && 'zibll_settlement_uncertain' === $invoice->error_code;
             echo '<details><summary>' . esc_html__('核验/补单', 'jiuliu-usdt-payment') . '</summary><form method="post" action="' . esc_url(admin_url('admin-post.php')) . '"><input type="hidden" name="action" value="jiuliu_usdt_verify_invoice"><input type="hidden" name="invoice_id" value="' . esc_attr($invoice->id) . '">';
             wp_nonce_field('jiuliu_usdt_verify_invoice_' . $invoice->id);
             echo '<input type="text" name="txid" maxlength="64" value="' . esc_attr($invoice->txid ?: $invoice->submitted_txid) . '" placeholder="' . esc_attr__('64 位交易哈希', 'jiuliu-usdt-payment') . '" required>';
-            echo '<label><input type="checkbox" name="force" value="1"> ' . esc_html__('金额/时间异常时尝试强制补单（关闭的商城订单仍会被安全拦截）', 'jiuliu-usdt-payment') . '</label>';
+            echo '<label><input type="checkbox" name="force" value="1"' . ($is_uncertain ? ' required' : '') . '> ' . esc_html__('金额/时间异常时尝试强制补单（关闭的商城订单仍会被安全拦截）', 'jiuliu-usdt-payment') . '</label>';
+            if ($is_uncertain) {
+                echo '<div class="notice notice-error inline"><p><strong>' . esc_html__('高风险：此前子比结算结果不确定。再次结算可能重复开通权益、扣减库存、发货或发送通知。', 'jiuliu-usdt-payment') . '</strong></p></div>';
+                echo '<label><input type="checkbox" name="confirm_uncertain_settlement" value="1" required> ' . esc_html__('我已核对会员/余额/内容权限、库存、发货及通知，理解重复结算风险，仍确认重试。', 'jiuliu-usdt-payment') . '</label>';
+            }
             submit_button(__('核验交易', 'jiuliu-usdt-payment'), 'small primary', '', false);
             echo '</form></details>';
         }
 
-        if (!in_array($invoice->status, array('paid', 'rejected'), true)) {
+        $can_reject = in_array($invoice->status, array('pending', 'expired', 'review', 'superseded', 'closed', 'closed_no_monitor'), true)
+            && (!isset($invoice->error_code) || 'zibll_settlement_uncertain' !== (string) $invoice->error_code);
+        if ($can_reject) {
             echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" onsubmit="return confirm(\'' . esc_js(__('确定拒绝此支付单？此操作不会退回链上资产。', 'jiuliu-usdt-payment')) . '\');"><input type="hidden" name="action" value="jiuliu_usdt_reject_invoice"><input type="hidden" name="invoice_id" value="' . esc_attr($invoice->id) . '">';
             wp_nonce_field('jiuliu_usdt_reject_invoice_' . $invoice->id);
             submit_button(__('拒绝', 'jiuliu-usdt-payment'), 'small delete', '', false);
@@ -460,7 +564,8 @@ class JIULIU_USDT_Admin
         $next_cron = wp_next_scheduled(JIULIU_USDT_Cron::EVENT);
         $endpoint = rest_url('jiuliu-usdt/v1/cron');
         $token = $this->settings->get('cron_token');
-        $cron_url = add_query_arg('token', $token, $endpoint);
+        $backoff_remaining = JIULIU_USDT_Trongrid::backoff_remaining();
+        $transactional_tables = $this->db->settlement_tables_are_transactional();
         $status_rows = array(
             __('WordPress', 'jiuliu-usdt-payment')       => get_bloginfo('version'),
             __('PHP', 'jiuliu-usdt-payment')             => PHP_VERSION,
@@ -468,7 +573,10 @@ class JIULIU_USDT_Admin
             __('父主题', 'jiuliu-usdt-payment')          => $zibll['is_zibll'] ? 'Zibll ' . $zibll['version'] : get_template(),
             __('Zibll V9 支付接口', 'jiuliu-usdt-payment') => $zibll['api_ok'] ? __('正常', 'jiuliu-usdt-payment') : __('缺失', 'jiuliu-usdt-payment'),
             __('插件网关', 'jiuliu-usdt-payment')        => $this->settings->is_enabled() ? __('已启用', 'jiuliu-usdt-payment') : __('未启用/地址无效', 'jiuliu-usdt-payment'),
+            __('既有支付单自动监控', 'jiuliu-usdt-payment') => $this->settings->get('pause_monitoring', 0) ? __('紧急暂停', 'jiuliu-usdt-payment') : __('运行中', 'jiuliu-usdt-payment'),
             __('关闭订单到账观察', 'jiuliu-usdt-payment') => $this->settings->get('monitor_closed_orders', 1) ? __('已启用（只转人工）', 'jiuliu-usdt-payment') : __('已停用', 'jiuliu-usdt-payment'),
+            __('结算表事务引擎', 'jiuliu-usdt-payment')    => is_wp_error($transactional_tables) ? $transactional_tables->get_error_message() : __('正常（InnoDB）', 'jiuliu-usdt-payment'),
+            __('TronGrid 查询退避', 'jiuliu-usdt-payment') => $backoff_remaining > 0 ? sprintf(__('剩余 %d 秒', 'jiuliu-usdt-payment'), $backoff_remaining) : __('正常', 'jiuliu-usdt-payment'),
             __('WP-Cron 下次运行', 'jiuliu-usdt-payment') => $next_cron ? wp_date('Y-m-d H:i:s', $next_cron) : __('未计划', 'jiuliu-usdt-payment'),
         );
 
@@ -491,8 +599,16 @@ class JIULIU_USDT_Admin
         echo '<div class="jiuliu-usdt-card jiuliu-usdt-cron-card"><h2>' . esc_html__('服务器 Cron（推荐）', 'jiuliu-usdt-payment') . '</h2>';
         echo '<p>' . esc_html__('每分钟调用一次。建议使用请求头传密钥，避免密钥出现在代理访问日志中：', 'jiuliu-usdt-payment') . '</p>';
         echo '<pre><code>* * * * * curl -fsS -X POST -H "X-Jiuliu-Cron-Token: ' . esc_html($token) . '" "' . esc_html($endpoint) . '" &gt;/dev/null 2&gt;&amp;1</code></pre>';
-        echo '<details><summary>' . esc_html__('兼容查询参数的 URL', 'jiuliu-usdt-payment') . '</summary><code class="jiuliu-long-code">' . esc_html($cron_url) . '</code></details>';
-        echo '<p class="description">' . esc_html__('WP-Cron 会继续作为兜底。外部 Cron 和浏览器轮询都带锁与限频，不会重复结算。', 'jiuliu-usdt-payment') . '</p></div>';
+        echo '<p class="description">' . esc_html__('接口只接受 POST，并且密钥只能放在 X-Jiuliu-Cron-Token 请求头；URL 查询参数不会被接受。WP-Cron 会继续作为兜底。', 'jiuliu-usdt-payment') . '</p>';
+        if (defined('JIULIU_USDT_CRON_TOKEN')) {
+            echo '<p class="description">' . esc_html__('当前密钥由 wp-config.php 中的 JIULIU_USDT_CRON_TOKEN 管理，请在服务器配置中更换。', 'jiuliu-usdt-payment') . '</p>';
+        } else {
+            echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" onsubmit="return confirm(\'' . esc_js(__('更换后旧 Cron 密钥会立即失效。确定继续？', 'jiuliu-usdt-payment')) . '\');"><input type="hidden" name="action" value="jiuliu_usdt_rotate_cron_token">';
+            wp_nonce_field('jiuliu_usdt_rotate_cron_token');
+            submit_button(__('一键更换 Cron 密钥', 'jiuliu-usdt-payment'), 'secondary', '', false);
+            echo '</form>';
+        }
+        echo '</div>';
 
         echo '<div class="jiuliu-usdt-card"><h2>' . esc_html__('安全说明', 'jiuliu-usdt-payment') . '</h2><ul class="ul-disc">';
         echo '<li>' . esc_html__('插件只读取公开链上数据，不保存、请求或使用钱包私钥和助记词。', 'jiuliu-usdt-payment') . '</li>';

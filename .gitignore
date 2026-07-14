@@ -4,5 +4,9 @@ Thumbs.db
 .vscode/
 
 # Local test artifacts
-qa/
 preview-usdt.html
+qa/python-deps/
+qa/__pycache__/
+qa/*.zip
+dist/
+.phpunit.result.cache

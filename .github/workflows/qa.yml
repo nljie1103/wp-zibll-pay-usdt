@@ -1,0 +1,102 @@
+name: Plugin QA
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  qa:
+    name: PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.0', '7.1', '8.2', '8.3']
+
+    steps:
+      - name: Check out canonical source
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Lint PHP source and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          find jiuliu-usdt-payment qa -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Run PHP regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          for test in qa/test-*.php; do
+            php "$test"
+          done
+
+      - name: Run release contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 qa/test-frontend-parse.py
+          python3 qa/test-utf8.py
+          python3 qa/test-release-metadata.py
+          python3 qa/test-release-contracts.py
+
+      - name: Build and verify release ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist dist-second
+          python3 scripts/build_release.py --output dist/jiuliu-usdt-payment-1.0.2.zip
+          python3 qa/test-zip-structure.py dist/jiuliu-usdt-payment-1.0.2.zip
+          python3 scripts/build_release.py --output dist-second/jiuliu-usdt-payment-1.0.2.zip
+          cmp dist/jiuliu-usdt-payment-1.0.2.zip dist-second/jiuliu-usdt-payment-1.0.2.zip
+
+          if [ -f jiuliu-usdt-payment-1.0.2.zip ]; then
+            python3 qa/test-zip-structure.py jiuliu-usdt-payment-1.0.2.zip
+            cmp jiuliu-usdt-payment-1.0.2.zip dist/jiuliu-usdt-payment-1.0.2.zip
+          fi
+
+  mysql-interleaving:
+    name: Real MariaDB lock interleaving
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: jiuliu_qa
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mysqli
+          coverage: none
+      - name: Run two-connection settlement/close test
+        env:
+          QA_MYSQL_HOST: 127.0.0.1
+          QA_MYSQL_PORT: 3306
+          QA_MYSQL_USER: root
+          QA_MYSQL_PASSWORD: root
+          QA_MYSQL_DATABASE: jiuliu_qa
+        run: php qa/test-mysql-lock-interleaving.php

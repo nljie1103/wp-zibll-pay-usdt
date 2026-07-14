@@ -39,8 +39,8 @@ final class JIULIU_USDT_Plugin
         $this->cron     = new JIULIU_USDT_Cron($this->settings, $this->db, $this->invoices);
         $this->admin    = new JIULIU_USDT_Admin($this->settings, $this->db, $this->rate, $this->trongrid, $this->invoices);
 
+        add_action('init', array($this, 'maybe_upgrade'), 1);
         add_action('init', array($this, 'load_textdomain'));
-        add_action('admin_init', array($this, 'maybe_upgrade'));
         add_action('after_setup_theme', array($this->zibll, 'register'), 99);
     }
 
@@ -56,8 +56,10 @@ final class JIULIU_USDT_Plugin
     public function maybe_upgrade()
     {
         if (get_option('jiuliu_usdt_db_version') !== JIULIU_USDT_DB_VERSION) {
-            $this->db->install();
+            return $this->db->install();
         }
+
+        return true;
     }
 
     public static function activate()
@@ -71,7 +73,11 @@ final class JIULIU_USDT_Plugin
         $settings->install_defaults();
 
         $db = new JIULIU_USDT_DB();
-        $db->install();
+        $installed = $db->install();
+        if (is_wp_error($installed)) {
+            deactivate_plugins(plugin_basename(JIULIU_USDT_FILE));
+            wp_die(esc_html($installed->get_error_message()));
+        }
 
         JIULIU_USDT_Cron::schedule();
     }
@@ -80,5 +86,7 @@ final class JIULIU_USDT_Plugin
     {
         JIULIU_USDT_Cron::unschedule();
         delete_transient('jiuliu_usdt_scan_lock');
+        delete_transient(JIULIU_USDT_Trongrid::BACKOFF_TRANSIENT);
+        delete_transient(JIULIU_USDT_Trongrid::FAILURE_TRANSIENT);
     }
 }

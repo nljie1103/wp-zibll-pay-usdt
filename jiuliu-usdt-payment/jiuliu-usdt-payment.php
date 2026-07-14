@@ -2,8 +2,9 @@
 /**
  * Plugin Name: 九流网络 USDT 支付
  * Plugin URI:  https://blog.jiuliu.org/
+ * Update URI:  https://github.com/nljie1103/wp-zibll-pay-usdt
  * Description: 为子比（Zibll）主题提供 USDT-TRC20 原生收银台支付、链上自动核验与订单自动交付。
- * Version:     1.0.1
+ * Version:     1.0.2
  * Author:      九流网络
  * Text Domain: jiuliu-usdt-payment
  * Domain Path: /languages
@@ -17,8 +18,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('JIULIU_USDT_VERSION', '1.0.1');
-define('JIULIU_USDT_DB_VERSION', '1.0.2');
+define('JIULIU_USDT_VERSION', '1.0.2');
+define('JIULIU_USDT_DB_VERSION', '1.0.3');
 define('JIULIU_USDT_FILE', __FILE__);
 define('JIULIU_USDT_DIR', plugin_dir_path(__FILE__));
 define('JIULIU_USDT_URL', plugin_dir_url(__FILE__));

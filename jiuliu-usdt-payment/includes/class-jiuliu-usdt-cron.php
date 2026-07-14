@@ -11,6 +11,7 @@ class JIULIU_USDT_Cron
     private $settings;
     private $db;
     private $invoices;
+    private static $schedule_filter_added = false;
 
     public function __construct(JIULIU_USDT_Settings $settings, JIULIU_USDT_DB $db, JIULIU_USDT_Invoices $invoices)
     {
@@ -18,7 +19,6 @@ class JIULIU_USDT_Cron
         $this->db = $db;
         $this->invoices = $invoices;
 
-        add_filter('cron_schedules', array(__CLASS__, 'add_schedule'));
         add_action(self::EVENT, array($this, 'run'));
         add_action('rest_api_init', array($this, 'register_rest_route'));
 
@@ -36,7 +36,10 @@ class JIULIU_USDT_Cron
 
     public static function schedule()
     {
-        add_filter('cron_schedules', array(__CLASS__, 'add_schedule'));
+        if (!self::$schedule_filter_added) {
+            add_filter('cron_schedules', array(__CLASS__, 'add_schedule'));
+            self::$schedule_filter_added = true;
+        }
         if (!wp_next_scheduled(self::EVENT)) {
             wp_schedule_event(time() + 30, 'jiuliu_every_minute', self::EVENT);
         }
@@ -49,8 +52,19 @@ class JIULIU_USDT_Cron
 
     public function run()
     {
-        if (!$this->settings->is_enabled()) {
-            return array('disabled' => true);
+        // Disabling the gateway stops new quotes but must not abandon invoices
+        // already shown to customers. Only the separate emergency switch may
+        // pause monitoring and automatic settlement of existing invoices.
+        if ($this->settings->get('pause_monitoring', 0)) {
+            return array('paused' => true);
+        }
+
+        $schema = $this->db->settlement_tables_are_transactional();
+        if (is_wp_error($schema)) {
+            return array(
+                'error'      => $schema->get_error_message(),
+                'error_code' => $schema->get_error_code(),
+            );
         }
 
         if (get_transient('jiuliu_usdt_scan_lock')) {
@@ -66,12 +80,21 @@ class JIULIU_USDT_Cron
 
         set_transient('jiuliu_usdt_scan_lock', 1, 55);
         try {
-            $this->db->recover_stale_processing(5);
+            if (false === $this->db->recover_stale_processing(5)) {
+                throw new RuntimeException(__('无法恢复超时的结算处理中支付单。', 'jiuliu-usdt-payment'));
+            }
             $stats = $this->invoices->scan_pending();
-            $this->db->release_old_active_keys($this->settings->get('late_grace_hours', 24));
+            if (!is_array($stats)) {
+                throw new RuntimeException(__('链上扫描返回了无效结果。', 'jiuliu-usdt-payment'));
+            }
+            if (false === $this->db->release_old_active_keys($this->settings->get('late_grace_hours', 24))) {
+                throw new RuntimeException(__('无法释放已结束支付单的金额尾数。', 'jiuliu-usdt-payment'));
+            }
 
             if (0 === ((int) gmdate('H')) && (int) gmdate('i') < 2) {
-                $this->db->delete_old_logs($this->settings->get('log_retention_days', 90));
+                if (false === $this->db->delete_old_logs($this->settings->get('log_retention_days', 90))) {
+                    throw new RuntimeException(__('无法清理过期 USDT 日志。', 'jiuliu-usdt-payment'));
+                }
             }
 
             return $stats;
@@ -87,7 +110,7 @@ class JIULIU_USDT_Cron
     public function register_rest_route()
     {
         register_rest_route('jiuliu-usdt/v1', '/cron', array(
-            'methods'             => array(WP_REST_Server::READABLE, WP_REST_Server::CREATABLE),
+            'methods'             => WP_REST_Server::CREATABLE,
             'callback'            => array($this, 'rest_run'),
             'permission_callback' => array($this, 'rest_permission'),
         ));
@@ -97,9 +120,6 @@ class JIULIU_USDT_Cron
     {
         $expected = (string) $this->settings->get('cron_token');
         $provided = (string) $request->get_header('x-jiuliu-cron-token');
-        if (!$provided) {
-            $provided = (string) $request->get_param('token');
-        }
         if (!$expected || !$provided || !hash_equals($expected, $provided)) {
             return new WP_Error('rest_forbidden', __('Cron 密钥无效。', 'jiuliu-usdt-payment'), array('status' => 403));
         }
@@ -118,10 +138,27 @@ class JIULIU_USDT_Cron
 
     public function rest_run()
     {
-        return rest_ensure_response(array(
-            'success' => true,
-            'result'  => $this->run(),
+        $result = $this->run();
+        $status = !empty($result['error'])
+            ? 'error'
+            : (!empty($result['paused'])
+                ? 'paused'
+                : (!empty($result['busy'])
+                    ? 'busy'
+                    : ((!empty($result['partial']) || !empty($result['errors'])) ? 'partial' : 'ok')));
+        $response = rest_ensure_response(array(
+            'success' => 'ok' === $status,
+            'status'  => $status,
+            'result'  => $result,
             'time'    => gmdate('c'),
         ));
+        if (is_object($response) && is_callable(array($response, 'set_status'))) {
+            if (in_array($status, array('error', 'partial', 'paused'), true)) {
+                $response->set_status(503);
+            } elseif ('busy' === $status) {
+                $response->set_status(409);
+            }
+        }
+        return $response;
     }
 }

@@ -15,8 +15,10 @@ class JIULIU_USDT_Settings
     {
         return array(
             'enabled'                   => 0,
+            'pause_monitoring'          => 0,
             'receive_address'           => '',
             'trongrid_api_key'          => '',
+            'trongrid_max_pages'        => 10,
             'rate_mode'                 => 'fixed',
             'fixed_rate'                => '7.20',
             'coingecko_api_key'         => '',
@@ -69,6 +71,10 @@ class JIULIU_USDT_Settings
             return trim((string) JIULIU_USDT_TRONGRID_API_KEY);
         }
 
+        if ('coingecko_api_key' === $key && defined('JIULIU_USDT_COINGECKO_API_KEY')) {
+            return trim((string) JIULIU_USDT_COINGECKO_API_KEY);
+        }
+
         if ('cron_token' === $key && defined('JIULIU_USDT_CRON_TOKEN')) {
             return trim((string) JIULIU_USDT_CRON_TOKEN);
         }
@@ -80,6 +86,7 @@ class JIULIU_USDT_Settings
     {
         return PHP_INT_SIZE >= 8
             && (bool) $this->get('enabled')
+            && !(bool) $this->get('pause_monitoring')
             && JIULIU_USDT_Util::is_valid_tron_address($this->get('receive_address'));
     }
 
@@ -89,6 +96,7 @@ class JIULIU_USDT_Settings
         $new = $old;
 
         $new['enabled']                   = empty($input['enabled']) ? 0 : 1;
+        $new['pause_monitoring']          = empty($input['pause_monitoring']) ? 0 : 1;
         $new['rate_mode']                 = (!empty($input['rate_mode']) && 'auto' === $input['rate_mode']) ? 'auto' : 'fixed';
         $new['frontend_manual_txid']      = empty($input['frontend_manual_txid']) ? 0 : 1;
         $new['monitor_closed_orders']     = empty($input['monitor_closed_orders']) ? 0 : 1;
@@ -140,6 +148,7 @@ class JIULIU_USDT_Settings
         $new['invoice_timeout']    = max(5, min(180, isset($input['invoice_timeout']) ? absint($input['invoice_timeout']) : 15));
         $new['late_grace_hours']   = max(1, min(168, isset($input['late_grace_hours']) ? absint($input['late_grace_hours']) : 24));
         $new['log_retention_days'] = max(7, min(365, isset($input['log_retention_days']) ? absint($input['log_retention_days']) : 90));
+        $new['trongrid_max_pages'] = max(1, min(10, isset($input['trongrid_max_pages']) ? absint($input['trongrid_max_pages']) : 10));
 
         $minimum = isset($input['minimum_local_amount']) ? (float) $input['minimum_local_amount'] : 1;
         $maximum = isset($input['maximum_local_amount']) ? (float) $input['maximum_local_amount'] : 100000;
@@ -159,12 +168,33 @@ class JIULIU_USDT_Settings
             $new['cron_token'] = JIULIU_USDT_Util::random_token(32);
         }
 
-        $allowlist = isset($input['cron_ip_allowlist']) ? wp_unslash($input['cron_ip_allowlist']) : '';
+        $allowlist = isset($input['cron_ip_allowlist']) ? trim((string) wp_unslash($input['cron_ip_allowlist'])) : '';
+        if (strlen($allowlist) > 8192) {
+            return new WP_Error('invalid_cron_ip_allowlist', __('Cron IP 白名单内容过长。', 'jiuliu-usdt-payment'));
+        }
         $ips = array();
-        foreach (preg_split('/[\s,]+/', trim($allowlist)) as $ip) {
-            if ($ip && filter_var($ip, FILTER_VALIDATE_IP)) {
-                $ips[] = $ip;
+        $invalid_ips = array();
+        foreach ((array) preg_split('/[\s,]+/', $allowlist) as $ip) {
+            if (!$ip) {
+                continue;
             }
+            if (!filter_var($ip, FILTER_VALIDATE_IP)) {
+                $invalid_ips[] = $ip;
+                continue;
+            }
+            $ips[] = $ip;
+        }
+        if ($invalid_ips) {
+            return new WP_Error(
+                'invalid_cron_ip_allowlist',
+                sprintf(
+                    __('Cron IP 白名单包含无效地址（不支持 CIDR）：%s。设置未保存，原白名单保持不变。', 'jiuliu-usdt-payment'),
+                    implode(', ', array_slice($invalid_ips, 0, 5))
+                )
+            );
+        }
+        if (count($ips) > 100) {
+            return new WP_Error('invalid_cron_ip_allowlist', __('Cron IP 白名单最多允许 100 个地址。', 'jiuliu-usdt-payment'));
         }
         $new['cron_ip_allowlist'] = implode("\n", array_unique($ips));
 
@@ -173,6 +203,28 @@ class JIULIU_USDT_Settings
         delete_transient('jiuliu_usdt_auto_rate');
 
         return $new;
+    }
+
+    /**
+     * Rotate the stored external-Cron credential. A wp-config.php constant is
+     * intentionally immutable from WordPress so an administrator cannot get a
+     * false success message while the effective credential remains unchanged.
+     */
+    public function rotate_cron_token()
+    {
+        if (defined('JIULIU_USDT_CRON_TOKEN')) {
+            return new WP_Error(
+                'cron_token_managed_by_constant',
+                __('Cron 密钥由 wp-config.php 中的 JIULIU_USDT_CRON_TOKEN 管理，请在服务器配置中更换。', 'jiuliu-usdt-payment')
+            );
+        }
+
+        $settings = $this->all();
+        $settings['cron_token'] = JIULIU_USDT_Util::random_token(32);
+        update_option(self::OPTION_NAME, $settings, false);
+        $this->cache = null;
+
+        return $settings['cron_token'];
     }
 
     public function masked_api_key($key)

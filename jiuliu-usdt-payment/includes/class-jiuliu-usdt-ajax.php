@@ -31,6 +31,14 @@ class JIULIU_USDT_Ajax
             wp_send_json_error(array('message' => __('请求验证失败，请刷新支付页面后重试。', 'jiuliu-usdt-payment')), 403);
         }
 
+        if (!$this->settings->get('frontend_manual_txid', 1)) {
+            wp_send_json_error(array('message' => __('前台交易哈希核验已关闭，请联系管理员。', 'jiuliu-usdt-payment')), 403);
+        }
+
+        if ($this->settings->get('pause_monitoring', 0)) {
+            wp_send_json_error(array('message' => __('链上核验处于紧急暂停状态，请联系管理员。', 'jiuliu-usdt-payment')), 503);
+        }
+
         if (!$this->allow_attempt($invoice_id)) {
             wp_send_json_error(array('message' => __('提交过于频繁，请五分钟后再试。', 'jiuliu-usdt-payment')), 429);
         }
@@ -74,4 +82,3 @@ class JIULIU_USDT_Ajax
         return true;
     }
 }
-

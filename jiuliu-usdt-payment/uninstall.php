@@ -9,4 +9,5 @@ if (!defined('WP_UNINSTALL_PLUGIN')) {
 // remove the plugin tables manually after completing their accounting export.
 wp_clear_scheduled_hook('jiuliu_usdt_scan_event');
 delete_transient('jiuliu_usdt_scan_lock');
-
+delete_transient('jiuliu_usdt_trongrid_backoff');
+delete_transient('jiuliu_usdt_trongrid_failures');
