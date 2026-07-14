@@ -26,18 +26,13 @@ jobs:
           php-version: ${{ matrix.php }}
           coverage: none
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
       - name: Lint PHP source and tests
         shell: bash
         run: |
           set -euo pipefail
-          find jiuliu-usdt-payment qa -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+          find jiuliu-crypto-payment qa -type f -name '*.php' -print0 | xargs -0 -n1 php -l
 
-      - name: Run PHP regression tests
+      - name: Run PHP contract tests
         shell: bash
         run: |
           set -euo pipefail
@@ -45,29 +40,24 @@ jobs:
             php "$test"
           done
 
-      - name: Run release contract tests
+      - name: Run release metadata checks
         shell: bash
         run: |
           set -euo pipefail
-          python3 qa/test-frontend-parse.py
           python3 qa/test-utf8.py
           python3 qa/test-release-metadata.py
-          python3 qa/test-release-contracts.py
 
-      - name: Build and verify release ZIP
+      - name: Build and verify deterministic release ZIP
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist dist-second
-          python3 scripts/build_release.py --output dist/jiuliu-usdt-payment-1.0.2.zip
-          python3 qa/test-zip-structure.py dist/jiuliu-usdt-payment-1.0.2.zip
-          python3 scripts/build_release.py --output dist-second/jiuliu-usdt-payment-1.0.2.zip
-          cmp dist/jiuliu-usdt-payment-1.0.2.zip dist-second/jiuliu-usdt-payment-1.0.2.zip
+          python3 scripts/build_release.py --output dist/jiuliu-crypto-payment-2.0.0.zip
+          python3 qa/test-zip-structure.py dist/jiuliu-crypto-payment-2.0.0.zip
+          sha256sum -c SHA256SUMS
 
-          if [ -f jiuliu-usdt-payment-1.0.2.zip ]; then
-            python3 qa/test-zip-structure.py jiuliu-usdt-payment-1.0.2.zip
-            cmp jiuliu-usdt-payment-1.0.2.zip dist/jiuliu-usdt-payment-1.0.2.zip
-          fi
+          python3 scripts/build_release.py --output dist-second/jiuliu-crypto-payment-2.0.0.zip
+          cmp dist/jiuliu-crypto-payment-2.0.0.zip dist-second/jiuliu-crypto-payment-2.0.0.zip
 
   mysql-interleaving:
     name: Real MariaDB lock interleaving

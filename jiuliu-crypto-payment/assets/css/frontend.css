@@ -1,0 +1,219 @@
+.payment-method-radio .jiuliu-crypto-method-logo {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+}
+
+.pay-payment.jiuliu_crypto .modal-pay-body .row-5.hide-sm {
+    display: none !important;
+}
+
+.pay-payment.jiuliu_crypto .modal-pay-body .row-5 {
+    width: 390px;
+    max-width: calc(100vw - 24px);
+}
+
+.pay-payment.jiuliu_crypto .t-wechat,
+.pay-payment.jiuliu_crypto .t-alipay {
+    display: none !important;
+}
+
+.pay-payment.jiuliu_crypto .pay-logo {
+    background-image: url("../img/crypto-payment.svg");
+}
+
+.pay-payment.jiuliu_crypto .jiuliu-crypto-route-label {
+    display: inline-block;
+    margin-left: 9px;
+    font-weight: 700;
+    color: #26a17b;
+}
+
+.pay-payment.jiuliu_crypto .pay-notice .notice {
+    background: #26a17b;
+}
+
+.jiuliu-crypto-details {
+    margin: 0 16px 14px;
+    padding: 12px;
+    border: 1px solid rgba(38, 161, 123, .24);
+    border-radius: 9px;
+    text-align: left;
+    font-size: 13px;
+    background: rgba(38, 161, 123, .055);
+    color: var(--main-color, inherit);
+}
+
+.jiuliu-crypto-warning {
+    padding: 9px 10px;
+    margin-bottom: 10px;
+    border-radius: 7px;
+    color: #a45a00;
+    background: rgba(255, 174, 66, .16);
+    line-height: 1.55;
+}
+
+.jiuliu-crypto-field {
+    display: block;
+    margin: 8px 0;
+}
+
+.jiuliu-crypto-field > span {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--muted-color, #777);
+}
+
+.jiuliu-crypto-field > div {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.jiuliu-crypto-field b {
+    color: #26a17b;
+    font-size: 17px;
+    letter-spacing: .02em;
+}
+
+.jiuliu-crypto-field code {
+    min-width: 0;
+    flex: 1;
+    padding: 6px 7px;
+    border-radius: 5px;
+    overflow-wrap: anywhere;
+    background: rgba(127, 127, 127, .12);
+    color: inherit;
+    font-size: 11px;
+}
+
+.jiuliu-crypto-copy {
+    flex: 0 0 auto;
+    padding: 5px 9px !important;
+    font-size: 12px !important;
+}
+
+.jiuliu-crypto-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--muted-color, #777);
+    font-size: 11px;
+}
+
+.jiuliu-crypto-expiry {
+    margin-top: 8px;
+    line-height: 1.5;
+    color: #d45d5d;
+}
+
+.jiuliu-crypto-manual {
+    margin-top: 10px;
+    border-top: 1px dashed rgba(127, 127, 127, .3);
+    padding-top: 9px;
+}
+
+.jiuliu-crypto-manual summary {
+    cursor: pointer;
+    color: var(--muted-color, #777);
+}
+
+.jiuliu-crypto-tx-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.jiuliu-crypto-tx-row input {
+    min-width: 0;
+    flex: 1;
+    font-family: monospace;
+    font-size: 11px;
+}
+
+.jiuliu-crypto-tx-result {
+    min-height: 18px;
+    margin-top: 6px;
+    line-height: 1.45;
+}
+
+.jiuliu-crypto-tx-result.is-loading {
+    color: #777;
+}
+
+.jiuliu-crypto-tx-result.is-success {
+    color: #26a17b;
+}
+
+.jiuliu-crypto-tx-result.is-error {
+    color: #d63638;
+}
+
+.jiuliu-crypto-order-proof {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px 10px;
+    color: var(--muted-color, #777);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.jiuliu-crypto-order-proof-footer {
+    margin-left: 10px;
+    vertical-align: middle;
+}
+
+.jiuliu-crypto-order-proof-network,
+.jiuliu-crypto-order-proof a {
+    color: #26a17b;
+}
+
+.jiuliu-crypto-order-proof a:hover {
+    color: #1c8464;
+}
+
+.jiuliu-crypto-order-proof code {
+    padding: 1px 4px;
+    border-radius: 4px;
+    background: rgba(38, 161, 123, .09);
+    color: inherit;
+    font-size: 11px;
+}
+
+.jiuliu-crypto-order-proof-panel {
+    margin: 10px 16px 16px;
+    padding: 12px 14px;
+    border: 1px solid rgba(38, 161, 123, .2);
+    border-radius: 8px;
+    background: rgba(38, 161, 123, .045);
+}
+
+.jiuliu-crypto-order-proof-title {
+    margin-bottom: 6px;
+    color: var(--main-color, inherit);
+    font-weight: 700;
+}
+
+@media (max-width: 480px) {
+    .jiuliu-crypto-details {
+        margin-right: 10px;
+        margin-left: 10px;
+        padding: 10px;
+    }
+
+    .jiuliu-crypto-meta {
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .jiuliu-crypto-order-proof-footer {
+        display: flex;
+        margin: 7px 0 0;
+    }
+
+    .jiuliu-crypto-order-proof-panel {
+        margin-right: 10px;
+        margin-left: 10px;
+    }
+}

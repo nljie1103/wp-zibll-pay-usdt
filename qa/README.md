@@ -1,25 +1,35 @@
-# QA 说明
+# 2.0.0 QA
 
-本目录的测试始终读取同一个仓库内的 `../jiuliu-usdt-payment/`，避免测试一份源码却发布另一份源码。
+所有检查直接读取同一仓库中的 `../jiuliu-crypto-payment/`，构建脚本也只打包这份源码。
 
 ## 本地检查
 
-1. 对 `jiuliu-usdt-payment/` 和 `qa/` 下所有 PHP 文件执行 `php -l`。
-2. 依次执行 `qa/test-*.php`。
-3. 执行下列静态/发布检查：
+PHP 语法：
 
-       python qa/test-frontend-parse.py
-       python qa/test-utf8.py
-       python qa/test-release-metadata.py
-       python qa/test-release-contracts.py
+```bash
+find jiuliu-crypto-payment qa -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+```
 
-4. 需要验证安装包时，必须先从当前源码重新构建，然后把该正式 ZIP 的路径显式传入测试：
+2.0.0 功能契约：
 
-       python scripts/build_release.py --output dist/jiuliu-usdt-payment-1.0.2.zip
-       python qa/test-zip-structure.py dist/jiuliu-usdt-payment-1.0.2.zip
+```bash
+for test in qa/test-*.php; do php "$test"; done
+```
 
-`test-zip-structure.py` 不提供默认的旧 QA 包；它会同时检查 ZIP 名称、目录结构、CRC、文件集和每个文件的字节内容。
+通用检查：
 
-GitHub Actions 在插件声明支持的 PHP 7.0、7.1，以及 PHP 8.2、8.3 上重复执行上述检查。
+```bash
+python qa/test-utf8.py
+python qa/test-release-metadata.py
+```
 
-`test-mysql-lock-interleaving.php` 是真实双连接数据库测试。本地未设置 `QA_MYSQL_HOST` 时会明确跳过；GitHub Actions 会启动 MariaDB 10.11，验证结算连接持有 `FOR UPDATE` 锁时，关闭订单连接必须等待，且提交或回滚后状态不会混合。
+确定性安装包：
+
+```bash
+python scripts/build_release.py --output dist/jiuliu-crypto-payment-2.0.0.zip
+python qa/test-zip-structure.py dist/jiuliu-crypto-payment-2.0.0.zip
+```
+
+连续构建两次得到的 ZIP 必须逐字节一致。`test-zip-structure.py` 会检查文件名、单一插件根目录、路径安全、CRC、文件集合、规范化内容及版本号。
+
+`test-mysql-lock-interleaving.php` 是可选的真实 MariaDB 双连接锁测试。未设置 `QA_MYSQL_HOST` 时本地会跳过；GitHub Actions 会启动 MariaDB 10.11 执行。

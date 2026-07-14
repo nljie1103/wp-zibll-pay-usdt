@@ -4,9 +4,10 @@ Thumbs.db
 .vscode/
 
 # Local test artifacts
-preview-usdt.html
+preview-crypto.html
 qa/python-deps/
 qa/__pycache__/
 qa/*.zip
-dist/
+dist/*
+!dist/jiuliu-crypto-payment-2.0.0.zip
 .phpunit.result.cache
