@@ -33,7 +33,9 @@ jobs:
           find jiuliu-crypto-payment qa -type f -name '*.php' -print0 | xargs -0 -n1 php -l
 
       - name: Lint frontend JavaScript
-        run: node --check jiuliu-crypto-payment/assets/js/frontend.js
+        run: |
+          node --check jiuliu-crypto-payment/assets/js/frontend.js
+          node --check jiuliu-crypto-payment/assets/js/admin.js
 
       - name: Run PHP contract tests
         shell: bash
@@ -55,12 +57,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist dist-second
-          python3 scripts/build_release.py --output dist/jiuliu-crypto-payment-2.1.0.zip
-          python3 qa/test-zip-structure.py dist/jiuliu-crypto-payment-2.1.0.zip
+          python3 scripts/build_release.py --output dist/jiuliu-crypto-payment-2.1.1.zip
+          python3 qa/test-zip-structure.py dist/jiuliu-crypto-payment-2.1.1.zip
           sha256sum -c SHA256SUMS
 
-          python3 scripts/build_release.py --output dist-second/jiuliu-crypto-payment-2.1.0.zip
-          cmp dist/jiuliu-crypto-payment-2.1.0.zip dist-second/jiuliu-crypto-payment-2.1.0.zip
+          python3 scripts/build_release.py --output dist-second/jiuliu-crypto-payment-2.1.1.zip
+          cmp dist/jiuliu-crypto-payment-2.1.1.zip dist-second/jiuliu-crypto-payment-2.1.1.zip
 
   mysql-interleaving:
     name: Real MariaDB lock interleaving
