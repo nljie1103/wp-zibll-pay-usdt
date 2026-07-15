@@ -1,6 +1,6 @@
 <?php
 
-// 2.1.2 wp-admin route-manager contract. This intentionally renders the real
+// 2.1.3 wp-admin route-manager contract. This intentionally renders the real
 // private settings screen with lightweight WordPress stubs, then inspects the
 // resulting form. It catches presentation regressions that static grep alone
 // cannot see (missing disabled routes, duplicate names, leaked credentials,
@@ -8,7 +8,7 @@
 
 define('ABSPATH', __DIR__ . '/');
 define('JIULIU_CRYPTO_URL', 'https://example.test/wp-content/plugins/jiuliu-crypto-payment/');
-define('JIULIU_CRYPTO_VERSION', '2.1.2');
+define('JIULIU_CRYPTO_VERSION', '2.1.3');
 define('MINUTE_IN_SECONDS', 60);
 
 $GLOBALS['qa_211_options'] = array();
@@ -42,6 +42,7 @@ function sanitize_html_class($value, $fallback = '')
 }
 function absint($value) { return abs((int) $value); }
 function wp_unslash($value) { return $value; }
+function wp_slash($value) { return $value; }
 function wp_parse_args($args, $defaults = array()) { return array_merge($defaults, is_array($args) ? $args : array()); }
 function wp_json_encode($value, $flags = 0) { return json_encode($value, $flags); }
 function wp_generate_password($length = 12) { return str_repeat('x', (int) $length); }
@@ -209,6 +210,12 @@ $xpath = new DOMXPath($dom);
 $config_details = $xpath->query('//details[@data-route-config]');
 qa_211_assert(count($routes) === $config_details->length, 'not every all(false) route has one real configuration panel');
 qa_211_assert(0 === $xpath->query('//details[@data-route-config and @open]')->length, 'a route configuration panel is open by default');
+$configuration_parent = $xpath->query('//details[@data-route-configurations]');
+qa_211_assert(1 === $configuration_parent->length, 'route configurations lack one parent details element');
+qa_211_assert(!$configuration_parent->item(0)->hasAttribute('open'), 'route configurations parent is open on an ordinary page load');
+qa_211_assert(count($routes) === $xpath->query('.//details[@data-route-config]', $configuration_parent->item(0))->length, 'route inputs are not all retained inside the collapsed parent');
+qa_211_assert(1 === $xpath->query('//button[@data-route-expand-all and normalize-space(.)="展开全部路线"]')->length, 'expand-all-routes control is missing or mislabeled');
+qa_211_assert(1 === $xpath->query('//button[@data-route-collapse-all and normalize-space(.)="收起全部路线"]')->length, 'collapse-all-routes control is missing or mislabeled');
 qa_211_assert(count($routes) === $xpath->query('//*[@data-route-summary]')->length, 'route summaries do not cover the complete catalog exactly once');
 qa_211_assert(0 === $xpath->query('//button[@data-route-set-enabled]')->length, 'legacy combined enable/open action still exists');
 qa_211_assert(3 === $xpath->query('//*[@data-route-summary and @data-route-config-state="configured"]')->length, 'configured and enabled states were not classified independently');
@@ -326,14 +333,23 @@ qa_211_assert('https://optimism.example.test/rpc' === $saved_routes['usdc_optimi
 $prepare = new ReflectionMethod('JIULIU_CRYPTO_Admin', 'prepare_settings_action');
 $prepare->setAccessible(true);
 $action_input = $seed;
+$action_input['fixed_rate'] = '19.00000000';
+$action_input['monitor_closed_orders'] = 0;
 $action_routes = qa_211_route_map($action_input['payment_routes']);
 $action_routes['usdc_arbitrum']['enabled'] = 1;
+$action_routes['usdc_arbitrum']['receive_address'] = '0x4444444444444444444444444444444444444444';
+$action_routes['usdc_arbitrum']['rpc_url'] = 'https://arbitrum-new.example.test/rpc';
+$action_routes['usdc_base']['receive_address'] = '0x9999999999999999999999999999999999999999';
 $action_input['payment_routes'] = array_values($action_routes);
 $args = array(&$action_input, $seed, 'save_route', 'usdc_arbitrum', false);
 $prepared = $prepare->invokeArgs($admin, $args);
 qa_211_assert(true === $prepared, 'save_route action was rejected');
 $prepared_routes = qa_211_route_map($action_input['payment_routes']);
 qa_211_assert(empty($prepared_routes['usdc_arbitrum']['enabled']), 'save_route changed persisted enabled state');
+qa_211_assert('0x4444444444444444444444444444444444444444' === $prepared_routes['usdc_arbitrum']['receive_address'], 'save_route did not merge the target route');
+qa_211_assert($base_address === $prepared_routes['usdc_base']['receive_address'], 'save_route merged an unrelated route');
+qa_211_assert($seed['fixed_rate'] === $action_input['fixed_rate'], 'save_route merged an unrelated global setting');
+qa_211_assert($seed['monitor_closed_orders'] === $action_input['monitor_closed_orders'], 'save_route merged an unrelated global checkbox');
 
 $action_input = $seed;
 $args = array(&$action_input, $seed, 'save_and_enable_route', 'usdc_arbitrum', false);
@@ -368,7 +384,9 @@ qa_211_assert(is_wp_error($prepare->invokeArgs($admin, $args)), 'non-whitelisted
 $admin_source = file_get_contents(__DIR__ . '/../jiuliu-crypto-payment/includes/class-jiuliu-crypto-admin.php');
 $admin_js = file_get_contents(__DIR__ . '/../jiuliu-crypto-payment/assets/js/admin.js');
 qa_211_assert(false !== strpos($admin_source, '->all(false)'), 'admin stopped loading disabled routes via all(false)');
+qa_211_assert(false !== strpos($admin_source, 'data-route-configurations'), 'route configuration parent details is missing');
 qa_211_assert(false !== strpos($admin_js, 'data-route-open'), 'native admin script cannot open a selected route');
+qa_211_assert(false !== strpos($admin_js, 'configurations.open = true'), 'opening a route does not reveal its parent details');
 qa_211_assert(false !== strpos($admin_js, 'data-route-search'), 'native admin script lacks route search handling');
 qa_211_assert(
     false !== strpos($admin_js, 'data-route-config-filter')
@@ -392,4 +410,4 @@ qa_211_assert(false === stripos($admin_js, 'jquery'), 'admin route manager unexp
 $admin_css = file_get_contents(__DIR__ . '/../jiuliu-crypto-payment/assets/css/admin.css');
 qa_211_assert(false === strpos($admin_css, '.is-js [data-route-config]:not([open])'), 'closed route details are still completely hidden by CSS');
 
-fwrite(STDOUT, "OK: 2.1.2 configured/runtime route-manager, local saves and persistence contracts passed\n");
+fwrite(STDOUT, "OK: 2.1.3 configured/runtime route-manager, local saves and persistence contracts passed\n");

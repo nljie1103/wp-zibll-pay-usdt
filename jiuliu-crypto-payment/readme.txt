@@ -4,7 +4,7 @@ Tags: usdt, usdc, fdusd, pyusd, eurc, trc20, bep20, erc20, zibll
 Requires at least: 6.0
 Tested up to: 7.0.1
 Requires PHP: 7.0
-Stable tag: 2.1.2
+Stable tag: 2.1.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -79,6 +79,10 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 不能。插件不持有私钥，退款必须由管理员使用外部钱包人工完成。
 
 == Changelog ==
+
+= 2.1.3 =
+
+* 为路线详细配置增加父级全局折叠，后台默认不再铺开全部路线；修复单路线保存会连带保存其他路线及全局设置的问题。
 
 = 2.1.2 =
 

@@ -1,7 +1,7 @@
 <?php
 
 define('ABSPATH', __DIR__ . '/');
-define('JIULIU_CRYPTO_VERSION', '2.1.2');
+define('JIULIU_CRYPTO_VERSION', '2.1.3');
 define('MINUTE_IN_SECONDS', 60);
 
 class WP_Error

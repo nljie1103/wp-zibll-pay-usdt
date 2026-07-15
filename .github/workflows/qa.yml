@@ -57,12 +57,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist dist-second
-          python3 scripts/build_release.py --output dist/jiuliu-crypto-payment-2.1.2.zip
-          python3 qa/test-zip-structure.py dist/jiuliu-crypto-payment-2.1.2.zip
+          python3 scripts/build_release.py --output dist/jiuliu-crypto-payment-2.1.3.zip
+          python3 qa/test-zip-structure.py dist/jiuliu-crypto-payment-2.1.3.zip
           sha256sum -c SHA256SUMS
 
-          python3 scripts/build_release.py --output dist-second/jiuliu-crypto-payment-2.1.2.zip
-          cmp dist/jiuliu-crypto-payment-2.1.2.zip dist-second/jiuliu-crypto-payment-2.1.2.zip
+          python3 scripts/build_release.py --output dist-second/jiuliu-crypto-payment-2.1.3.zip
+          cmp dist/jiuliu-crypto-payment-2.1.3.zip dist-second/jiuliu-crypto-payment-2.1.3.zip
 
   mysql-interleaving:
     name: Real MariaDB lock interleaving

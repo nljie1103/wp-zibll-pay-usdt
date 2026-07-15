@@ -230,9 +230,11 @@
     }
 
     function updateExpandedState(manager) {
+        var configurations = manager.querySelector('[data-route-configurations]');
+
         manager.querySelectorAll('[data-route-open]').forEach(function (button) {
             var target = findById(manager, button.getAttribute('data-route-open'));
-            button.setAttribute('aria-expanded', target && target.open ? 'true' : 'false');
+            button.setAttribute('aria-expanded', target && target.open && (!configurations || configurations.open) ? 'true' : 'false');
         });
 
         var available = manager.querySelector('[data-route-available]');
@@ -241,10 +243,14 @@
         });
     }
 
-    function openRoute(manager, button) {
-        var target = findById(manager, button.getAttribute('data-route-open'));
+    function revealRoute(manager, target, focusSummary, smoothScroll) {
         if (!target || !target.matches('[data-route-config]')) {
             return;
+        }
+
+        var configurations = manager.querySelector('[data-route-configurations]');
+        if (configurations) {
+            configurations.open = true;
         }
 
         manager.querySelectorAll('[data-route-config]').forEach(function (details) {
@@ -257,14 +263,36 @@
         updateExpandedState(manager);
 
         var summary = target.querySelector(':scope > summary');
-        if (summary) {
+        if (summary && focusSummary) {
             summary.focus({ preventScroll: true });
         }
 
         target.scrollIntoView({
-            behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+            behavior: smoothScroll && !window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'smooth' : 'auto',
             block: 'start'
         });
+    }
+
+    function openRoute(manager, button) {
+        revealRoute(manager, findById(manager, button.getAttribute('data-route-open')), true, true);
+    }
+
+    function openRouteFromHash(manager) {
+        if (!window.location.hash || window.location.hash.length < 2) {
+            return;
+        }
+
+        var targetId = window.location.hash.slice(1);
+        try {
+            targetId = decodeURIComponent(targetId);
+        } catch (error) {
+            return;
+        }
+
+        var target = findById(manager, targetId);
+        if (target && target.matches('[data-route-config]')) {
+            revealRoute(manager, target, false, false);
+        }
     }
 
     function filterRoutes(manager) {
@@ -1072,6 +1100,15 @@
                 updateExpandedState(manager);
             });
         }
+
+        var configurations = manager.querySelector('[data-route-configurations]');
+        if (configurations) {
+            configurations.addEventListener('toggle', function () {
+                updateExpandedState(manager);
+            });
+        }
+
+        openRouteFromHash(manager);
     }
 
     window.addEventListener('beforeunload', function (event) {

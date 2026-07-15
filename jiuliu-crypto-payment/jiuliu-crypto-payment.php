@@ -4,7 +4,7 @@
  * Plugin URI:  https://blog.jiuliu.org/
  * Update URI:  https://github.com/nljie1103/wp-zibll-pay-usdt
  * Description: 为子比（Zibll）主题提供多币种、多链收银台、严格链上核验与订单自动交付。
- * Version:     2.1.2
+ * Version:     2.1.3
  * Author:      九流网络
  * Text Domain: jiuliu-crypto-payment
  * Domain Path: /languages
@@ -18,7 +18,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('JIULIU_CRYPTO_VERSION', '2.1.2');
+define('JIULIU_CRYPTO_VERSION', '2.1.3');
 define('JIULIU_CRYPTO_FILE', __FILE__);
 define('JIULIU_CRYPTO_DIR', plugin_dir_path(__FILE__));
 define('JIULIU_CRYPTO_URL', plugin_dir_url(__FILE__));

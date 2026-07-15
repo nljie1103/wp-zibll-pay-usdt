@@ -9,5 +9,5 @@ qa/python-deps/
 qa/__pycache__/
 qa/*.zip
 dist/*
-!dist/jiuliu-crypto-payment-2.1.2.zip
+!dist/jiuliu-crypto-payment-2.1.3.zip
 .phpunit.result.cache

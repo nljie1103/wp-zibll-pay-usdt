@@ -94,6 +94,62 @@ select[data-route-asset] {
     margin: 20px 0;
 }
 
+.jiuliu-route-configurations {
+    min-width: 0;
+    margin: 22px 0 4px;
+    border: 1px solid #c3c4c7;
+    border-radius: 8px;
+    background: #f6f7f7;
+}
+
+.jiuliu-route-configurations > summary {
+    min-width: 0;
+    padding: 14px 16px;
+    cursor: pointer;
+    color: #1d2327;
+}
+
+.jiuliu-route-configurations > summary::marker {
+    color: #50575e;
+}
+
+.jiuliu-route-configurations > summary:hover {
+    background: #f0f0f1;
+}
+
+.jiuliu-route-configurations > summary:focus-visible {
+    outline: 2px solid #2271b1;
+    outline-offset: 2px;
+}
+
+.jiuliu-route-configurations-summary {
+    display: inline-flex;
+    min-width: 0;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 5px 12px;
+}
+
+.jiuliu-route-configurations-summary strong {
+    font-size: 14px;
+}
+
+.jiuliu-route-configurations-summary span {
+    color: #646970;
+    font-size: 12px;
+    font-weight: 400;
+}
+
+.jiuliu-route-configurations[open] > summary {
+    border-bottom: 1px solid #c3c4c7;
+}
+
+.jiuliu-route-configurations-body {
+    min-width: 0;
+    padding: 16px;
+    background: #fff;
+}
+
 .jiuliu-route-manager-heading,
 .jiuliu-route-section-heading {
     display: flex;

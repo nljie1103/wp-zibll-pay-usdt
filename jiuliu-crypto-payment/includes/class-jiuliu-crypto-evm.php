@@ -948,7 +948,7 @@ class JIULIU_CRYPTO_EVM
         $headers = array(
             'Accept'       => 'application/json',
             'Content-Type' => 'application/json',
-            'User-Agent'   => 'Jiuliu-Crypto-Payment/' . (defined('JIULIU_CRYPTO_VERSION') ? JIULIU_CRYPTO_VERSION : '2.1.2') . '; ' . home_url('/'),
+            'User-Agent'   => 'Jiuliu-Crypto-Payment/' . (defined('JIULIU_CRYPTO_VERSION') ? JIULIU_CRYPTO_VERSION : '2.1.3') . '; ' . home_url('/'),
         );
         if (isset($this->route['rpc_headers']) && is_array($this->route['rpc_headers'])) {
             foreach ($this->route['rpc_headers'] as $name => $value) {

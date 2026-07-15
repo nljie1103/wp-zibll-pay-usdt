@@ -171,14 +171,15 @@ class JIULIU_CRYPTO_Admin
             ? sanitize_key(wp_unslash($_POST['jiuliu_settings_route_id']))
             : '';
         $close_gateway = !empty($_POST['jiuliu_close_gateway']);
+        $submitted_input = $input;
         $prepared = $this->prepare_settings_action($input, $old_settings, $settings_action, $route_id, $close_gateway);
         $result = is_wp_error($prepared) ? $prepared : $this->settings->update($input);
         if (is_wp_error($result)) {
             $message = $result->get_error_message();
-            if ($this->submission_contains_new_secret($input)) {
+            if ($this->submission_contains_new_secret($submitted_input)) {
                 $message .= ' ' . __('本次保存失败，新填写的密钥尚未保存，请重新填写。', 'jiuliu-crypto-payment');
             }
-            $this->remember_failed_route_draft($input, $route_id, $settings_action, $result);
+            $this->remember_failed_route_draft($submitted_input, $route_id, $settings_action, $result);
             $this->set_notice($message, 'error');
         } else {
             $new_monitor_closed = !empty($result['monitor_closed_orders']);
@@ -365,13 +366,14 @@ class JIULIU_CRYPTO_Admin
             return new WP_Error('missing_route_input', __('目标支付路线表单数据缺失，请刷新页面后重试。', 'jiuliu-crypto-payment'));
         }
 
+        $target_route = $input['payment_routes'][$route_key];
         $persisted_enabled = empty($old_routes[$route_id]['enabled']) ? 0 : 1;
         if ('save_route' === $settings_action) {
-            $input['payment_routes'][$route_key]['enabled'] = $persisted_enabled;
+            $target_route['enabled'] = $persisted_enabled;
         } elseif ('save_and_enable_route' === $settings_action) {
-            $input['payment_routes'][$route_key]['enabled'] = 1;
+            $target_route['enabled'] = 1;
         } else {
-            $input['payment_routes'][$route_key]['enabled'] = 0;
+            $target_route['enabled'] = 0;
             $is_last_enabled = $persisted_enabled && 1 === count($old_registry->enabled());
             if (!empty($old_settings['enabled']) && $is_last_enabled) {
                 if (!$close_gateway) {
@@ -380,9 +382,27 @@ class JIULIU_CRYPTO_Admin
                         __('这是当前最后一条已启用路线。请确认同时关闭数字货币支付总网关后再停用。', 'jiuliu-crypto-payment')
                     );
                 }
-                $input['enabled'] = 0;
             }
         }
+
+        // A route action is deliberately scoped to one route. Start from the
+        // persisted settings so unsaved controls elsewhere on the page cannot
+        // be written by this request, then replace only the submitted target.
+        // wp_slash keeps persisted values intact when Settings::update()
+        // applies the normal WordPress form unslashing and secret semantics.
+        $merged = wp_slash($old_settings);
+        $merged_routes = wp_slash($old_routes);
+        $merged_routes[$route_id] = $target_route;
+        $merged['payment_routes'] = array_values($merged_routes);
+        if ('disable_route' === $settings_action
+            && !empty($old_settings['enabled'])
+            && $persisted_enabled
+            && 1 === count($old_registry->enabled())
+            && $close_gateway
+        ) {
+            $merged['enabled'] = 0;
+        }
+        $input = $merged;
         return true;
     }
 
@@ -813,14 +833,18 @@ class JIULIU_CRYPTO_Admin
         $this->render_configured_routes($configured, $configuration_states);
         $this->render_available_routes($available, $configuration_states);
 
-        echo '<section class="jiuliu-route-configurations" aria-labelledby="jiuliu-route-configurations-title">';
-        echo '<div class="jiuliu-route-section-heading"><div><h3 id="jiuliu-route-configurations-title">' . esc_html__('路线详细配置', 'jiuliu-crypto-payment') . '</h3>';
+        $draft = $this->load_settings_draft();
+        $open_configurations = !empty($draft['route_id']) && isset($routes[$draft['route_id']]);
+        echo '<details class="jiuliu-route-configurations" data-route-configurations aria-labelledby="jiuliu-route-configurations-title"' . ($open_configurations ? ' open' : '') . '>';
+        echo '<summary><span class="jiuliu-route-configurations-summary"><strong id="jiuliu-route-configurations-title">' . esc_html(sprintf(__('路线详细配置（%d 条）', 'jiuliu-crypto-payment'), count($routes))) . '</strong><span>' . esc_html__('点击展开完整配置', 'jiuliu-crypto-payment') . '</span></span></summary>';
+        echo '<div class="jiuliu-route-configurations-body">';
+        echo '<div class="jiuliu-route-section-heading"><div><h3>' . esc_html__('路线详细配置', 'jiuliu-crypto-payment') . '</h3>';
         echo '<p class="description">' . esc_html__('每条路线仅有下方这一套真实表单。收起只隐藏正文，标题、表单值和未保存输入仍保留在页面中。', 'jiuliu-crypto-payment') . '</p></div>';
-        echo '<div class="jiuliu-route-bulk-actions"><button type="button" class="button button-small" data-route-expand-all>' . esc_html__('展开全部', 'jiuliu-crypto-payment') . '</button> <button type="button" class="button button-small" data-route-collapse-all>' . esc_html__('收起全部', 'jiuliu-crypto-payment') . '</button></div></div>';
+        echo '<div class="jiuliu-route-bulk-actions"><button type="button" class="button button-small" data-route-expand-all>' . esc_html__('展开全部路线', 'jiuliu-crypto-payment') . '</button> <button type="button" class="button button-small" data-route-collapse-all>' . esc_html__('收起全部路线', 'jiuliu-crypto-payment') . '</button></div></div>';
         foreach ($routes as $route_id => $route) {
             $this->render_route_config($route_id, $route, $configuration_states[$route_id]);
         }
-        echo '</section>';
+        echo '</div></details>';
         echo '<p class="screen-reader-text" aria-live="polite" aria-atomic="true" data-route-live></p>';
         echo '</div>';
     }
