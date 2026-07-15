@@ -4,7 +4,7 @@ Tags: usdt, usdc, fdusd, pyusd, eurc, trc20, bep20, erc20, zibll
 Requires at least: 6.0
 Tested up to: 7.0.1
 Requires PHP: 7.0
-Stable tag: 2.1.0
+Stable tag: 2.1.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -27,6 +27,7 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 * 支持余额、会员、付费内容、资源、商城及论坛付费场景
 * 前台二维码、复制地址、复制金额、倒计时和交易哈希核验
 * 后台支付单、人工核验、日志、路线测试和汇率测试
+* 三层后台路线管理器：已启用路线紧凑展示，未启用路线按币种分组，并支持搜索、筛选、地址复制和高级信息折叠
 * 每分钟 WP-Cron 及带请求头密钥、可选 IP 白名单的服务器 Cron 接口
 * 子比订单关闭后继续观察到账的独立开关
 * 固定汇率或 CoinGecko 第三方市场参考汇率
@@ -78,6 +79,10 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 不能。插件不持有私钥，退款必须由管理员使用外部钱包人工完成。
 
 == Changelog ==
+
+= 2.1.1 =
+
+* 重新设计支付路线后台管理界面：已启用路线紧凑展示，未启用路线按币种分组添加，增加搜索、筛选、地址复制和高级信息折叠；不改变支付、核验及结算逻辑。
 
 = 2.1.0 =
 

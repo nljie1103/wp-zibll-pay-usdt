@@ -1,6 +1,6 @@
 <?php
 
-// Deterministic 2.1.0 EVM cursor recovery tests. These use a fake adapter so
+// Deterministic 2.1.1 EVM cursor recovery tests. These use a fake adapter so
 // recent/history failures and exact block boundaries can be asserted without a
 // network dependency.
 

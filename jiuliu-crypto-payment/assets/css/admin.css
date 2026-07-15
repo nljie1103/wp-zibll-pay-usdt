@@ -25,50 +25,487 @@
     width: 230px;
 }
 
-.jiuliu-crypto-route-card {
+.jiuliu-crypto-settings,
+[data-route-manager] {
+    box-sizing: border-box;
+    max-width: 1200px;
+}
+
+[data-route-manager],
+[data-route-manager] * {
+    box-sizing: border-box;
+}
+
+[data-route-manager] [hidden] {
+    display: none !important;
+}
+
+[data-route-manager].is-js [data-route-config]:not([open]) {
+    display: none;
+}
+
+.jiuliu-route-toolbar,
+.jiuliu-route-manager-toolbar,
+.jiuliu-route-filter,
+[data-route-manager] .jiuliu-crypto-toolbar {
+    display: grid;
+    grid-template-columns: minmax(260px, 2fr) minmax(150px, 1fr) minmax(150px, 1fr);
+    align-items: end;
+    gap: 12px;
+    margin: 16px 0;
+    padding: 14px;
+    border: 1px solid #dcdcde;
+    border-radius: 8px;
+    background: #f6f7f7;
+}
+
+.jiuliu-route-toolbar label,
+.jiuliu-route-manager-toolbar label,
+.jiuliu-route-filter-field {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 5px;
+    color: #1d2327;
+    font-weight: 600;
+}
+
+.jiuliu-route-filter-field label {
+    display: block;
+}
+
+[data-route-search],
+select[data-route-status],
+select[data-route-asset] {
+    width: 100%;
+    max-width: none;
+}
+
+.jiuliu-route-toolbar-actions,
+.jiuliu-route-actions,
+.jiuliu-route-summary-actions {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 7px;
+}
+
+.jiuliu-route-section {
+    margin: 20px 0;
+}
+
+.jiuliu-route-manager-heading,
+.jiuliu-route-section-heading {
+    display: flex;
+    min-width: 0;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.jiuliu-route-manager-heading > div,
+.jiuliu-route-section-heading > div {
+    min-width: 0;
+}
+
+.jiuliu-route-manager-heading h2,
+.jiuliu-route-section-heading h3 {
+    margin: 0 0 5px;
+}
+
+.jiuliu-route-manager-heading p,
+.jiuliu-route-section-heading p {
+    margin: 0;
+}
+
+.jiuliu-route-count {
+    flex: 0 0 auto;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: #f0f0f1;
+    color: #50575e;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.jiuliu-route-bulk-actions {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    gap: 7px;
+}
+
+.jiuliu-route-section > h2,
+.jiuliu-route-section > h3 {
+    margin-bottom: 6px;
+}
+
+.jiuliu-route-section-description,
+.jiuliu-route-help,
+[data-route-live] {
+    color: #646970;
+}
+
+[data-route-live] {
+    min-height: 20px;
+    margin: 8px 0;
+}
+
+.jiuliu-route-summary-list {
+    display: grid;
+    gap: 9px;
     margin: 12px 0;
+}
+
+.jiuliu-route-summary {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(210px, 1.15fr) minmax(180px, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 12px;
+    border: 1px solid #dcdcde;
+    border-left: 4px solid #a7aaad;
+    border-radius: 6px;
+    background: #fff;
+}
+
+.jiuliu-route-summary[data-route-status="enabled"] {
+    border-left-color: #00a32a;
+}
+
+.jiuliu-route-summary > *,
+.jiuliu-route-summary-main,
+.jiuliu-route-summary-meta {
+    min-width: 0;
+}
+
+.jiuliu-route-summary-main {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px 10px;
+}
+
+.jiuliu-route-title {
+    display: flex;
+    min-width: 0;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+}
+
+.jiuliu-route-title strong {
+    color: #1d2327;
+    font-size: 14px;
+}
+
+.jiuliu-route-title span {
+    color: #50575e;
+}
+
+.jiuliu-route-summary-title {
+    color: #1d2327;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.jiuliu-route-summary-meta,
+.jiuliu-route-address,
+.jiuliu-route-contract,
+[data-route-manager] code {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.jiuliu-route-summary-meta,
+.jiuliu-route-address {
+    color: #50575e;
+    font-size: 12px;
+}
+
+.jiuliu-route-meta {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 3px;
+    color: #50575e;
+    font-size: 12px;
+}
+
+.jiuliu-route-meta code {
+    width: fit-content;
+    max-width: 100%;
+}
+
+.jiuliu-route-state,
+.jiuliu-route-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    color: #50575e;
+    background: #f0f0f1;
+    font-size: 12px;
+    line-height: 1.35;
+    white-space: nowrap;
+}
+
+.jiuliu-route-state.is-enabled,
+.jiuliu-route-badge.is-enabled {
+    color: #006b38;
+    background: #e5f8f0;
+}
+
+.jiuliu-route-empty {
+    margin: 12px 0;
+    padding: 20px;
+    border: 1px dashed #a7aaad;
+    border-radius: 7px;
+    background: #f6f7f7;
+    color: #50575e;
+    text-align: center;
+}
+
+[data-route-available],
+[data-route-group],
+.jiuliu-crypto-route-card,
+.jiuliu-route-config {
+    min-width: 0;
+    margin: 10px 0;
     border: 1px solid #dcdcde;
     border-radius: 8px;
     background: #fff;
 }
 
-.jiuliu-crypto-route-card[open] {
-    border-color: #a7aaad;
-}
-
-.jiuliu-crypto-route-card > summary {
-    display: grid;
-    grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
-    align-items: center;
-    gap: 10px;
-    padding: 13px 14px;
+[data-route-available] > summary,
+[data-route-group] > summary,
+.jiuliu-crypto-route-card > summary,
+.jiuliu-route-config > summary {
+    min-width: 0;
+    padding: 12px 14px;
     cursor: pointer;
+    color: #1d2327;
+    font-weight: 600;
+    overflow-wrap: anywhere;
 }
 
-.jiuliu-crypto-route-card > summary::marker {
-    color: #646970;
+[data-route-available] > summary > span {
+    display: flex;
+    min-width: 0;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 5px 10px;
 }
 
-.jiuliu-crypto-route-card > summary > span {
+[data-route-available] > summary span span {
     color: #646970;
     font-size: 12px;
+    font-weight: 400;
 }
 
-.jiuliu-crypto-route-card .jiuliu-route-state {
-    padding: 3px 8px;
-    border-radius: 999px;
-    background: #f0f0f1;
+[data-route-available] > summary:hover,
+[data-route-group] > summary:hover,
+.jiuliu-route-config > summary:hover {
+    background: #f6f7f7;
+}
+
+[data-route-available][open],
+.jiuliu-route-config[open],
+.jiuliu-crypto-route-card[open] {
+    border-color: #8c8f94;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .05);
+}
+
+[data-route-available] > .jiuliu-route-available-body,
+[data-route-group] > .jiuliu-route-group-body,
+.jiuliu-crypto-route-body,
+.jiuliu-route-config-body {
+    min-width: 0;
+    padding: 14px;
+    border-top: 1px solid #dcdcde;
+}
+
+[data-route-group] {
+    margin: 10px 0;
+    background: #fdfdfd;
+}
+
+[data-route-group] > summary {
+    display: grid;
+    grid-template-columns: minmax(70px, auto) minmax(160px, 1fr) auto;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 10px 12px;
+}
+
+[data-route-group] > summary span {
+    min-width: 0;
+    color: #646970;
+    font-size: 12px;
+    font-weight: 400;
+    overflow-wrap: anywhere;
+}
+
+.jiuliu-route-no-results {
+    margin: 12px 0 0;
+    padding: 16px;
+    border: 1px dashed #a7aaad;
+    border-radius: 6px;
+    color: #50575e;
     text-align: center;
 }
 
-.jiuliu-crypto-route-card .jiuliu-route-state.is-enabled {
-    color: #087b50;
-    background: #e5f8f0;
+.jiuliu-route-config-list {
+    margin-top: 18px;
 }
 
-.jiuliu-crypto-route-body {
-    padding: 14px;
+.jiuliu-route-config > summary {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+}
+
+.jiuliu-route-config > summary > span:first-child {
+    display: flex;
+    min-width: 0;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 5px 10px;
+}
+
+.jiuliu-route-config > summary > span {
+    min-width: 0;
+    color: #646970;
+    font-size: 12px;
+    font-weight: 400;
+    overflow-wrap: anywhere;
+}
+
+.jiuliu-route-config > summary > strong {
+    color: #1d2327;
+    font-size: 14px;
+}
+
+.jiuliu-route-config-hint {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.jiuliu-route-enable-control {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    margin: 0 0 8px;
+    padding: 10px 12px;
+    border-left: 4px solid #2271b1;
+    background: #f0f6fc;
+}
+
+[data-route-pending-status]:not(:empty) {
+    color: #8a5700;
+    font-weight: 600;
+}
+
+.jiuliu-route-input-action,
+.jiuliu-route-code-line {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 7px;
+}
+
+.jiuliu-route-input-action input,
+.jiuliu-route-code-line code {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.jiuliu-route-input-action .button,
+.jiuliu-route-code-line .button {
+    flex: 0 0 auto;
+}
+
+.jiuliu-route-config .form-table {
+    table-layout: fixed;
+    width: 100%;
+}
+
+.jiuliu-route-config .form-table th {
+    width: 230px;
+}
+
+.jiuliu-route-config input[type="text"],
+.jiuliu-route-config input[type="url"],
+.jiuliu-route-config input[type="number"],
+.jiuliu-route-config textarea,
+.jiuliu-route-config select {
+    max-width: 100%;
+}
+
+.jiuliu-route-advanced {
+    margin: 14px 0 4px;
+    border: 1px solid #dcdcde;
+    border-radius: 6px;
+    background: #f6f7f7;
+}
+
+.jiuliu-route-advanced > summary {
+    padding: 10px 12px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.jiuliu-route-advanced-body {
+    min-width: 0;
+    padding: 12px;
     border-top: 1px solid #dcdcde;
+}
+
+.jiuliu-route-advanced dl {
+    margin: 0;
+}
+
+.jiuliu-route-metadata > div {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(130px, 190px) minmax(0, 1fr);
+    gap: 8px 14px;
+    padding: 8px 0;
+    border-top: 1px solid #dcdcde;
+}
+
+.jiuliu-route-metadata > div:first-child {
+    border-top: 0;
+}
+
+.jiuliu-route-advanced dt {
+    color: #50575e;
+    font-weight: 600;
+}
+
+.jiuliu-route-advanced dd {
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.jiuliu-route-contract {
+    min-width: 0;
+    margin: 12px 0;
+}
+
+.jiuliu-route-contract > strong {
+    display: block;
+    margin-bottom: 6px;
 }
 
 .jiuliu-clear-secret {
@@ -191,13 +628,35 @@
 }
 
 @media (max-width: 900px) {
-    .jiuliu-crypto-route-card > summary {
+    .jiuliu-route-toolbar,
+    .jiuliu-route-manager-toolbar,
+    .jiuliu-route-filter,
+    [data-route-manager] .jiuliu-crypto-toolbar {
+        grid-template-columns: minmax(220px, 2fr) minmax(150px, 1fr) minmax(150px, 1fr);
+    }
+
+    .jiuliu-route-toolbar-actions {
+        grid-column: 1 / -1;
+        justify-content: flex-start;
+    }
+
+    .jiuliu-crypto-route-card > summary,
+    .jiuliu-route-config > summary {
         grid-template-columns: 1fr auto;
     }
 
-    .jiuliu-crypto-route-card > summary > span:not(.jiuliu-route-state) {
-        grid-column: 1 / -1;
+    .jiuliu-route-summary {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .jiuliu-route-summary .jiuliu-route-meta {
+        grid-column: 1;
         grid-row: 2;
+    }
+
+    .jiuliu-route-summary .jiuliu-route-summary-actions {
+        grid-column: 2;
+        grid-row: 1 / span 2;
     }
 
     .jiuliu-crypto-status-grid {
@@ -211,5 +670,111 @@
     .jiuliu-crypto-toolbar {
         align-items: flex-start;
         flex-direction: column;
+    }
+}
+
+@media (max-width: 782px) {
+    .jiuliu-crypto-card,
+    [data-route-manager] {
+        width: 100%;
+        max-width: 100%;
+    }
+
+    .jiuliu-route-toolbar,
+    .jiuliu-route-manager-toolbar,
+    .jiuliu-route-filter,
+    [data-route-manager] .jiuliu-crypto-toolbar {
+        display: grid;
+        width: 100%;
+        grid-template-columns: minmax(0, 1fr);
+        align-items: stretch;
+    }
+
+    .jiuliu-route-toolbar-actions {
+        grid-column: auto;
+    }
+
+    .jiuliu-route-summary,
+    .jiuliu-route-config > summary,
+    .jiuliu-crypto-route-card > summary {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .jiuliu-route-summary .jiuliu-route-meta,
+    .jiuliu-route-summary .jiuliu-route-summary-actions {
+        grid-column: auto;
+        grid-row: auto;
+    }
+
+    .jiuliu-route-manager-heading,
+    .jiuliu-route-section-heading {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .jiuliu-route-count {
+        width: fit-content;
+        white-space: normal;
+    }
+
+    [data-route-group] > summary {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .jiuliu-route-summary-actions,
+    .jiuliu-route-actions,
+    .jiuliu-route-toolbar-actions {
+        justify-content: flex-start;
+    }
+
+    .jiuliu-route-summary-actions .button,
+    .jiuliu-route-actions .button {
+        max-width: 100%;
+        white-space: normal;
+    }
+
+    .jiuliu-route-config .form-table,
+    .jiuliu-route-config .form-table tbody,
+    .jiuliu-route-config .form-table tr,
+    .jiuliu-route-config .form-table th,
+    .jiuliu-route-config .form-table td {
+        display: block;
+        width: 100%;
+    }
+
+    .jiuliu-route-config .form-table th {
+        padding: 14px 0 4px;
+    }
+
+    .jiuliu-route-config .form-table td {
+        padding: 4px 0 12px;
+    }
+
+    .jiuliu-route-config input[type="text"],
+    .jiuliu-route-config input[type="url"],
+    .jiuliu-route-config input[type="number"],
+    .jiuliu-route-config textarea,
+    .jiuliu-route-config select {
+        width: 100%;
+    }
+
+    .jiuliu-route-input-action,
+    .jiuliu-route-code-line {
+        align-items: stretch;
+        flex-wrap: wrap;
+    }
+
+    .jiuliu-route-input-action input,
+    .jiuliu-route-code-line code {
+        flex-basis: 220px;
+    }
+
+    .jiuliu-route-metadata > div {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 3px;
+    }
+
+    .jiuliu-route-advanced dd {
+        margin-bottom: 10px;
     }
 }

@@ -1,6 +1,6 @@
 <?php
 
-// 2.1.0 provider-secret persistence contract. Password-style fields render
+// 2.1.1 provider-secret persistence contract. Password-style fields render
 // blank in wp-admin, so an ordinary save must preserve existing credentials;
 // replacement and deletion require explicit administrator intent.
 
@@ -173,4 +173,4 @@ qa_secret_assert(
     'a rejected credential save partially changed stored settings'
 );
 
-fwrite(STDOUT, "OK: 2.1.0 provider-secret preserve, replace and clear contracts passed\n");
+fwrite(STDOUT, "OK: 2.1.1 provider-secret preserve, replace and clear contracts passed\n");

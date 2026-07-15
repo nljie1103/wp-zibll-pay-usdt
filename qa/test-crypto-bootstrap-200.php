@@ -114,7 +114,7 @@ $required_classes = array(
 foreach ($required_classes as $class) {
     qa_200_assert(class_exists($class, false), 'New entrypoint did not load dependency ' . $class);
 }
-qa_200_same('2.1.0', JIULIU_CRYPTO_VERSION, 'Entrypoint version must be 2.1.0');
+qa_200_same('2.1.1', JIULIU_CRYPTO_VERSION, 'Entrypoint version must be 2.1.1');
 qa_200_same('jiuliu_crypto_settings', JIULIU_CRYPTO_Settings::OPTION_NAME, 'v2 must use only its new option name');
 
 $plugin = jiuliu_crypto_payment();

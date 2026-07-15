@@ -1,7 +1,7 @@
 <?php
 
 define('ABSPATH', __DIR__ . '/');
-define('JIULIU_CRYPTO_VERSION', '2.1.0');
+define('JIULIU_CRYPTO_VERSION', '2.1.1');
 define('MINUTE_IN_SECONDS', 60);
 
 class WP_Error
@@ -133,7 +133,12 @@ $frontend = file_get_contents(__DIR__ . '/../jiuliu-crypto-payment/assets/js/fro
 $css = file_get_contents(__DIR__ . '/../jiuliu-crypto-payment/assets/css/frontend.css');
 $zibll = file_get_contents(__DIR__ . '/../jiuliu-crypto-payment/includes/class-jiuliu-crypto-zibll.php');
 $invoices = file_get_contents(__DIR__ . '/../jiuliu-crypto-payment/includes/class-jiuliu-crypto-invoices.php');
-qa_rate_assert(false !== strpos($admin, '<details class="jiuliu-crypto-route-card"'), 'admin route cards are not collapsible');
+qa_rate_assert(
+    false !== strpos($admin, '<details id="')
+        && false !== strpos($admin, 'class="jiuliu-route-config jiuliu-crypto-route-card"')
+        && false !== strpos($admin, 'data-route-config'),
+    'admin route configurations are not native collapsible details'
+);
 qa_rate_assert(false !== strpos($admin, '网站必须完整收到收银台显示的精确金额'), 'admin exact-receipt warning missing');
 qa_rate_assert(false !== strpos($frontend, 'jiuliu-crypto-asset-select') && false !== strpos($frontend, 'jiuliu-crypto-network-select'), 'two-level frontend selector missing');
 qa_rate_assert(false !== strpos($frontend, 'data-jiuliu-method') && false !== strpos($frontend, '$target.trigger(\'click\')'), 'selector does not drive real Zibll method elements');

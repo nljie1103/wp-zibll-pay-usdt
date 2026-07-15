@@ -6,7 +6,7 @@
 define('ABSPATH', __DIR__ . '/');
 define('MINUTE_IN_SECONDS', 60);
 define('HOUR_IN_SECONDS', 3600);
-define('JIULIU_CRYPTO_VERSION', '2.1.0');
+define('JIULIU_CRYPTO_VERSION', '2.1.1');
 
 $GLOBALS['qa_tron_options'] = array();
 
