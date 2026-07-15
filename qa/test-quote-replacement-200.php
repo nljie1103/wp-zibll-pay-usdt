@@ -1,6 +1,6 @@
 <?php
 
-// 2.0.0 quote replacement contract. The unique Zibll order number must move
+// 2.1.0 quote replacement contract. The unique Zibll order number must move
 // from an old quote to its replacement atomically, and never across payment_id
 // ownership boundaries.
 
@@ -243,4 +243,4 @@ qa_quote_assert(is_wp_error($result) && 'invoice_quote_changed' === $result->get
 qa_quote_assert(0 === $wpdb->insert_calls, 'cross-payment ownership check occurred after inserting a replacement');
 qa_quote_assert('pending' === $wpdb->rows[1]['status'] && 'ORDER-2026-001' === $wpdb->rows[1]['zibll_order_num'], 'cross-payment rejection modified the owner quote');
 
-fwrite(STDOUT, "OK: 2.0.0 atomic quote replacement and payment ownership contracts passed\n");
+fwrite(STDOUT, "OK: 2.1.0 atomic quote replacement and payment ownership contracts passed\n");

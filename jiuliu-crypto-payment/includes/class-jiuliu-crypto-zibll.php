@@ -76,9 +76,16 @@ class JIULIU_CRYPTO_Zibll
 
         foreach ($this->payment_routes(true) as $route) {
             $label = $route['asset_symbol'] . ' · ' . $route['network'];
+            $method = isset($route['method']) ? (string) $route['method'] : '';
             $methods[$route['method']] = array(
                 'name' => $label,
-                'img'  => '<img class="jiuliu-crypto-method-logo" src="' . esc_url(JIULIU_CRYPTO_URL . 'assets/img/crypto-payment.svg') . '" alt="' . esc_attr($label) . '">',
+                // The marker lets the optional grouped picker drive Zibll's
+                // real payment-method elements. If JavaScript is unavailable,
+                // every route remains a normal, independently selectable
+                // Zibll payment method.
+                'img'  => '<span class="jiuliu-crypto-method-marker" data-jiuliu-method="' . esc_attr($method) . '">'
+                    . '<img class="jiuliu-crypto-method-logo" src="' . esc_url(JIULIU_CRYPTO_URL . 'assets/img/crypto-payment.svg') . '" alt="' . esc_attr($label) . '">'
+                    . '</span>',
             );
         }
         return $methods;
@@ -381,7 +388,10 @@ class JIULIU_CRYPTO_Zibll
         $network = !empty($proof['network']) ? sanitize_text_field($proof['network']) : __('链上', 'jiuliu-crypto-payment');
         $asset_symbol = !empty($proof['asset_symbol']) ? strtoupper(sanitize_key($proof['asset_symbol'])) : 'USDT';
         $amount = isset($proof['asset_amount']) ? trim((string) $proof['asset_amount']) : '';
-        if (!preg_match('/^[0-9]+(?:\.[0-9]{1,6})?$/D', $amount)) {
+        if (false !== strpos($amount, '.')) {
+            $amount = rtrim(rtrim($amount, '0'), '.');
+        }
+        if (!preg_match('/^[0-9]+(?:\.[0-9]{1,18})?$/D', $amount)) {
             $amount = '';
         }
 
@@ -590,6 +600,20 @@ class JIULIU_CRYPTO_Zibll
             JIULIU_CRYPTO_VERSION,
             true
         );
+        $route_choices = array();
+        foreach ($this->payment_routes(true) as $route) {
+            $route_choices[] = array(
+                'method'       => isset($route['method']) ? (string) $route['method'] : '',
+                'routeId'      => isset($route['id']) ? (string) $route['id'] : '',
+                'assetSymbol'  => isset($route['asset_symbol']) ? (string) $route['asset_symbol'] : '',
+                'assetLabel'   => isset($route['asset_name']) ? (string) $route['asset_name'] : '',
+                'networkLabel' => isset($route['network_label']) ? (string) $route['network_label'] : '',
+                'issuerLabel'  => isset($route['issuer_label']) ? (string) $route['issuer_label'] : '',
+                'assetType'    => isset($route['asset_type']) ? (string) $route['asset_type'] : '',
+                'feeSymbol'    => isset($route['fee_symbol']) ? (string) $route['fee_symbol'] : '',
+            );
+        }
+
         wp_localize_script('jiuliu-crypto-payment', 'jiuliuCrypto', array(
             'ajaxUrl'  => admin_url('admin-ajax.php'),
             'copyOk'   => __('已复制', 'jiuliu-crypto-payment'),
@@ -597,6 +621,17 @@ class JIULIU_CRYPTO_Zibll
             'checking' => __('正在核验链上交易…', 'jiuliu-crypto-payment'),
             'error'    => __('核验失败，请稍后重试', 'jiuliu-crypto-payment'),
             'waiting'  => __('等待链上确认，请勿关闭支付页面', 'jiuliu-crypto-payment'),
+            'cryptoPayment' => __('数字货币支付', 'jiuliu-crypto-payment'),
+            'chooseAsset'    => __('选择币种', 'jiuliu-crypto-payment'),
+            'chooseNetwork'  => __('选择网络', 'jiuliu-crypto-payment'),
+            'selectorTitle'  => __('选择币种和支付网络', 'jiuliu-crypto-payment'),
+            'assetLabel'     => __('币种', 'jiuliu-crypto-payment'),
+            'networkLabel'   => __('网络', 'jiuliu-crypto-payment'),
+            'exactAmountTitle' => __('网站必须完整收到支付单显示的精确金额。', 'jiuliu-crypto-payment'),
+            'routeLocked'    => __('支付单已按当前币种和网络锁定；如需换币或换链，请关闭本单后重新创建。', 'jiuliu-crypto-payment'),
+            'custodialPegLabel' => __('托管锚定', 'jiuliu-crypto-payment'),
+            'payerFeeNotice' => __('网站必须完整收到所示金额，网络手续费由付款方另外承担，不得从付款金额中扣除。', 'jiuliu-crypto-payment'),
+            'routeChoices'   => $route_choices,
             'methods'  => array_values(array_map(function ($route) {
                 return isset($route['method']) ? (string) $route['method'] : '';
             }, $this->payment_routes(false))),

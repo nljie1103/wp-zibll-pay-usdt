@@ -4,6 +4,111 @@
     object-fit: contain;
 }
 
+.jiuliu-crypto-source-method {
+    display: none !important;
+}
+
+.jiuliu-crypto-unified-method {
+    cursor: pointer;
+}
+
+.payment-method-radio.jiuliu-crypto-unified-method,
+.jiuliu-crypto-unified-method.flex {
+    gap: 6px;
+}
+
+.jiuliu-crypto-unified-method .jiuliu-crypto-method-logo {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+}
+
+.jiuliu-crypto-unified-method.active,
+.jiuliu-crypto-unified-method:focus-visible {
+    border-color: #26a17b;
+    outline: 2px solid rgba(38, 161, 123, .18);
+    outline-offset: 1px;
+}
+
+.jiuliu-crypto-unified-method.active .jiuliu-crypto-unified-check {
+    border-color: #26a17b;
+    background: #26a17b;
+    box-shadow: inset 0 0 0 3px var(--body-bg-color, #fff);
+}
+
+.jiuliu-crypto-route-selector {
+    margin: 0 0 12px;
+    padding: 12px;
+    border: 1px solid rgba(38, 161, 123, .26);
+    border-radius: 8px;
+    background: rgba(38, 161, 123, .055);
+}
+
+.jiuliu-crypto-route-selector[hidden] {
+    display: none !important;
+}
+
+.jiuliu-crypto-selector-title {
+    margin-bottom: 9px;
+    font-weight: 700;
+}
+
+.jiuliu-crypto-selector-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+    gap: 8px;
+}
+
+.jiuliu-crypto-selector-controls label,
+.jiuliu-crypto-selector-controls label > span {
+    display: block;
+}
+
+.jiuliu-crypto-selector-controls label > span {
+    margin-bottom: 4px;
+    color: var(--muted-color, #777);
+    font-size: 12px;
+}
+
+.jiuliu-crypto-selector-controls select {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+}
+
+.jiuliu-crypto-selector-summary {
+    margin-top: 8px;
+    color: #1c8464;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.jiuliu-crypto-selector-fee,
+.jiuliu-crypto-selector-lock {
+    margin-top: 9px;
+    padding: 8px 9px;
+    border-radius: 6px;
+    color: #9a5400;
+    background: rgba(255, 174, 66, .16);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.jiuliu-crypto-selector-fee strong,
+.jiuliu-crypto-selector-fee span {
+    display: block;
+}
+
+.jiuliu-crypto-selector-lock {
+    color: #b32d2e;
+    background: rgba(214, 54, 56, .1);
+}
+
+.jiuliu-crypto-route-selector.is-locked select {
+    cursor: not-allowed;
+    opacity: .65;
+}
+
 .pay-payment.jiuliu_crypto .modal-pay-body .row-5.hide-sm {
     display: none !important;
 }
@@ -196,6 +301,10 @@
 }
 
 @media (max-width: 480px) {
+    .jiuliu-crypto-selector-controls {
+        grid-template-columns: 1fr;
+    }
+
     .jiuliu-crypto-details {
         margin-right: 10px;
         margin-left: 10px;

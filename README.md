@@ -1,22 +1,22 @@
-# 九流网络多链加密货币支付 2.0.0
+# 九流网络多链加密货币支付 2.1.0
 
 面向 WordPress 子比（Zibll）主题的独立支付插件。插件将每个币种/网络路线注册为独立的子比支付方式，核验链上到账后调用子比统一订单完成入口。
 
 ## 支付路线
 
-安装后提供 7 条默认关闭的主网路线：
+安装后提供 36 条默认关闭的主网路线：
 
-| 币种 | 网络 | 查询方式 | 网络费币种 |
-| --- | --- | --- | --- |
-| USDT | TRON（TRC20） | TronGrid walletsolidity 固化块 | TRX |
-| USDT | Ethereum（ERC20） | EVM JSON-RPC | ETH |
-| USDC | Ethereum（ERC20） | EVM JSON-RPC | ETH |
-| USDC | Base（ERC20） | EVM JSON-RPC | ETH |
-| USDC | Arbitrum One（ERC20） | EVM JSON-RPC | ETH |
-| USDC | Polygon PoS（ERC20） | EVM JSON-RPC | POL |
-| USDC | Avalanche C-Chain（ERC20） | EVM JSON-RPC | AVAX |
+| 币种 | 网络 |
+| --- | --- |
+| USDT | TRON、Ethereum、BSC Binance-Peg、Celo、Avalanche、Kava EVM、Kaia |
+| USDC | Ethereum、Base、Arbitrum、Polygon、Avalanche、BSC Binance-Peg、Optimism、Celo、Linea、ZKsync、Unichain、World Chain、Ink、Sonic、Cronos、HyperEVM、Morph、Monad、Sei、XDC、Plume、Injective |
+| FDUSD | BNB Smart Chain |
+| PYUSD | Ethereum、Arbitrum |
+| EURC | Ethereum、Avalanche、Base、Cronos |
 
-管理员可以分别启用路线、填写公开收款地址及 CNY 汇率。TRON 路线使用 TronGrid walletsolidity 固化块判定，确认规则固定；EVM 路线必须配置支持 `eth_getLogs` 的 HTTPS JSON-RPC，并可分别设置确认数。
+合计覆盖 5 种资产和 25 个网络。管理员可以分别启用路线、填写公开收款地址及 CNY 汇率。TRON 路线使用 TronGrid walletsolidity 固化块判定，确认规则固定；EVM 路线必须配置支持 `eth_getLogs` 的 HTTPS JSON-RPC，并可分别设置确认数。前台会把所有已启用路线整理成币种/网络两级选择器。
+
+BSC USDT/USDC 会明确标注为 Binance-Peg 托管锚定资产，不会被描述成 Tether/Circle 原生发行。
 
 ## 金额与手续费
 
@@ -25,7 +25,7 @@
 ## 安装
 
 1. 在 WordPress 后台进入“插件 → 安装插件 → 上传插件”。
-2. 上传 `jiuliu-crypto-payment-2.0.0.zip`，安装并启用。
+2. 上传 `jiuliu-crypto-payment-2.1.0.zip`，安装并启用。
 3. 打开“多链收款 → 设置”，只启用需要的路线并填写对应网络的公开收款地址及只读查询服务。
 4. 设置固定汇率；如选择 CoinGecko 市场参考汇率，仍需为每条路线填写备用固定汇率。
 5. 打开“多链收款 → 系统状态”，测试全部已启用路线和汇率。
@@ -56,7 +56,7 @@
 ## 发布文件
 
 - 插件源码：`jiuliu-crypto-payment/`
-- 安装包：`dist/jiuliu-crypto-payment-2.0.0.zip`
+- 安装包：`dist/jiuliu-crypto-payment-2.1.0.zip`
 - 校验文件：`SHA256SUMS`
 - 自动化检查：`qa/`
 - 确定性构建：`scripts/build_release.py`
@@ -68,6 +68,6 @@ find jiuliu-crypto-payment qa -type f -name '*.php' -print0 | xargs -0 -n1 php -
 for test in qa/test-*.php; do php "$test"; done
 python qa/test-utf8.py
 python qa/test-release-metadata.py
-python scripts/build_release.py --output dist/jiuliu-crypto-payment-2.0.0.zip
-python qa/test-zip-structure.py dist/jiuliu-crypto-payment-2.0.0.zip
+python scripts/build_release.py --output dist/jiuliu-crypto-payment-2.1.0.zip
+python qa/test-zip-structure.py dist/jiuliu-crypto-payment-2.1.0.zip
 ```

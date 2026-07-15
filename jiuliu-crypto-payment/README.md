@@ -1,6 +1,6 @@
 # 九流网络多链加密货币支付
 
-版本：2.0.0
+版本：2.1.0
 
 这是面向 WordPress 子比（Zibll）V9 支付接口开发的独立插件。它不会修改子比主题文件；链上确认后，插件调用子比统一订单完成入口，由子比处理余额、会员、付费内容、资源、商城订单、论坛付费关注及相关发货流程。
 
@@ -18,21 +18,21 @@
 
 所有路线安装后默认关闭，且不预填商户收款地址、RPC 或 API Key。
 
-| 路线 | 代币精度 | 查询服务 | 确认规则 |
-| --- | ---: | --- | ---: |
-| USDT · TRON（TRC20） | 6 | TronGrid | TronGrid walletsolidity 固化块（固定） |
-| USDT · Ethereum（ERC20） | 6 | EVM JSON-RPC | 12 |
-| USDC · Ethereum（ERC20） | 6 | EVM JSON-RPC | 12 |
-| USDC · Base（ERC20） | 6 | EVM JSON-RPC | 20 |
-| USDC · Arbitrum One（ERC20） | 6 | EVM JSON-RPC | 20 |
-| USDC · Polygon PoS（ERC20） | 6 | EVM JSON-RPC | 64 |
-| USDC · Avalanche C-Chain（ERC20） | 6 | EVM JSON-RPC | 12 |
+| 币种 | 主网路线 |
+| --- | --- |
+| USDT | TRON、Ethereum、BNB Smart Chain（Binance-Peg）、Celo、Avalanche、Kava EVM、Kaia |
+| USDC | Ethereum、Base、Arbitrum、Polygon、Avalanche、BNB Smart Chain（Binance-Peg）、OP Mainnet、Celo、Linea、ZKsync Era、Unichain、World Chain、Ink、Sonic、Cronos、HyperEVM、Morph、Monad、Sei、XDC、Plume、Injective EVM |
+| FDUSD | BNB Smart Chain |
+| PYUSD | Ethereum、Arbitrum One |
+| EURC | Ethereum、Avalanche、Base、Cronos |
 
-每条路线都会作为一个独立支付方式出现在子比收银台。支付单会锁定创建时的路线、合约、收款地址、确认规则、汇率和精确金额，之后修改后台设置不会改变已经展示给用户的付款要求。
+合计 36 条路线、5 种资产和 25 个网络。前台只显示后台已经完整配置并启用的路线，并折叠成“先选币种、再选网络”的两级选择器；JavaScript 不可用时，每条路线仍作为独立的子比支付方式显示。支付单会锁定创建时的路线、合约、收款地址、确认规则、汇率和精确金额，之后修改后台设置不会改变已经展示给用户的付款要求。
+
+BNB Smart Chain 常用 USDT 和 USDC 属于 Binance-Peg 托管锚定资产，不是 Tether/Circle 在 BSC 直接发行的原生代币。插件会在后台和前台明确标注该区别；FDUSD 则按发行方在 BNB Smart Chain 的原生部署处理。
 
 ## 安装与启用
 
-1. 在 WordPress 后台上传并启用 `jiuliu-crypto-payment-2.0.0.zip`。
+1. 在 WordPress 后台上传并启用 `jiuliu-crypto-payment-2.1.0.zip`。
 2. 打开“多链收款 → 设置”。
 3. 为需要的路线填写该网络的公开收款地址。
 4. TRON 路线建议填写只读 TronGrid API Key；EVM 路线必须填写可靠的 HTTPS JSON-RPC。
@@ -49,7 +49,7 @@
 
 链上网络费、交易所提币手续费或其他平台费用全部由付款方另行承担，不得从页面金额中扣除。如果付款平台采用“从到账金额扣费”，付款方必须增加发送数量，确保收款地址最终完整收到页面显示的数额。
 
-插件按代币合约、目标网络、收款地址、链上时间、确认状态、精确原始整数金额和交易哈希进行核验。同一条链上的交易哈希只能结算一次；异常金额、过期付款、路线不一致或订单状态变化会阻止自动发货并进入人工处理。
+插件按代币合约、目标网络、收款地址、链上时间、确认状态、精确原始整数金额和交易哈希进行核验。同一条链上的交易哈希只能结算一次；异常金额、过期付款、路线不一致或订单状态变化会阻止自动发货并进入人工处理。BSC 三种 18 位代币在前台仍显示可操作的 6 位金额，插件使用纯十进制字符串精确换算并核验完整 18 位链上原始整数，不依赖 PHP 大整数或浮点近似。
 
 ## 自动监控与 Cron
 
@@ -84,7 +84,7 @@
 插件支持两种模式：
 
 - 固定汇率：使用每条路线填写的 CNY/代币汇率。
-- CoinGecko 市场参考：读取 USDT/CNY 或 USDC/CNY，并在接口失败、数据超过 10 分钟、数据异常或偏离备用固定汇率超过安全阈值时回退该路线的固定汇率。
+- CoinGecko 市场参考：按显式白名单读取 USDT、USDC、FDUSD、PYUSD 或 EURC 的 CNY 参考价，并在接口失败、数据超过 10 分钟、数据异常或偏离备用固定汇率超过安全阈值时回退该路线的固定汇率。
 
 自动报价会按币种短时缓存市场观测，每条路线仍分别应用自己的固定锚点、偏差熔断和报价过滤。CoinGecko 是第三方市场数据服务，不是 Tether、Circle 或任何交易所的官方结算价。希望价格完全可控的站点应使用固定汇率。
 

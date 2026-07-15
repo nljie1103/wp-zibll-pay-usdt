@@ -25,6 +25,52 @@
     width: 230px;
 }
 
+.jiuliu-crypto-route-card {
+    margin: 12px 0;
+    border: 1px solid #dcdcde;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.jiuliu-crypto-route-card[open] {
+    border-color: #a7aaad;
+}
+
+.jiuliu-crypto-route-card > summary {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    padding: 13px 14px;
+    cursor: pointer;
+}
+
+.jiuliu-crypto-route-card > summary::marker {
+    color: #646970;
+}
+
+.jiuliu-crypto-route-card > summary > span {
+    color: #646970;
+    font-size: 12px;
+}
+
+.jiuliu-crypto-route-card .jiuliu-route-state {
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: #f0f0f1;
+    text-align: center;
+}
+
+.jiuliu-crypto-route-card .jiuliu-route-state.is-enabled {
+    color: #087b50;
+    background: #e5f8f0;
+}
+
+.jiuliu-crypto-route-body {
+    padding: 14px;
+    border-top: 1px solid #dcdcde;
+}
+
 .jiuliu-clear-secret {
     display: inline-block;
     margin-left: 12px;
@@ -145,6 +191,15 @@
 }
 
 @media (max-width: 900px) {
+    .jiuliu-crypto-route-card > summary {
+        grid-template-columns: 1fr auto;
+    }
+
+    .jiuliu-crypto-route-card > summary > span:not(.jiuliu-route-state) {
+        grid-column: 1 / -1;
+        grid-row: 2;
+    }
+
     .jiuliu-crypto-status-grid {
         display: block;
     }

@@ -22,6 +22,7 @@ class JIULIU_CRYPTO_EVM
     private $request_timeout = 15;
     private $block_cache = array();
     private $verified_chain_id = null;
+    private $verified_token_decimals = null;
 
     public function __construct($route)
     {
@@ -562,7 +563,9 @@ class JIULIU_CRYPTO_EVM
     }
 
     /**
-     * Verify chain identity, latest-block access and eth_getLogs support.
+     * Verify chain identity, on-chain ERC-20 precision, latest-block access
+     * and eth_getLogs support. A syntactically valid contract address is not
+     * enough: quoting with the wrong decimals changes the financial amount.
      */
     public function test_connection()
     {
@@ -575,6 +578,10 @@ class JIULIU_CRYPTO_EVM
         $chain = $this->assert_chain_id();
         if (is_wp_error($chain)) {
             return $chain;
+        }
+        $token_decimals = $this->assert_token_decimals();
+        if (is_wp_error($token_decimals)) {
+            return $token_decimals;
         }
         $latest = $this->latest_block_number();
         if (is_wp_error($latest)) {
@@ -597,10 +604,63 @@ class JIULIU_CRYPTO_EVM
         return array(
             'ok'              => true,
             'chain_id'        => $chain,
+            'token_decimals'  => $token_decimals,
+            'eth_call'        => true,
             'latest_block'    => $latest,
             'eth_getlogs'     => true,
             'logs_in_latest'  => count($logs),
         );
+    }
+
+    /**
+     * Read decimals() using the canonical ERC-20 selector and require one
+     * ABI-encoded uint256 word. This rejects EOAs, wrong token contracts,
+     * truncated RPC results and route metadata that does not match the chain.
+     */
+    private function assert_token_decimals()
+    {
+        if (null !== $this->verified_token_decimals) {
+            return $this->verified_token_decimals;
+        }
+
+        $result = $this->rpc('eth_call', array(array(
+            'to'   => $this->contract_address(),
+            'data' => '0x313ce567',
+        ), 'latest'));
+        if (is_wp_error($result)) {
+            return $result;
+        }
+
+        $result = strtolower(trim((string) $result));
+        if (!preg_match('/^0x[a-f0-9]{64}$/D', $result)) {
+            return new WP_Error(
+                'evm_invalid_token_decimals_response',
+                __('The ERC-20 decimals() call did not return one ABI uint256 word.', 'jiuliu-crypto-payment')
+            );
+        }
+
+        $actual = $this->hex_to_decimal(substr($result, 2));
+        if ('' === $actual || !preg_match('/^[0-9]+$/D', $actual)) {
+            return new WP_Error(
+                'evm_invalid_token_decimals_response',
+                __('The ERC-20 decimals() result is invalid.', 'jiuliu-crypto-payment')
+            );
+        }
+
+        $expected = (string) $this->token_decimals();
+        if (!hash_equals($expected, $actual)) {
+            return new WP_Error(
+                'evm_token_decimals_mismatch',
+                sprintf(
+                    __('The token contract reports %1$s decimals, but this route requires %2$s.', 'jiuliu-crypto-payment'),
+                    $actual,
+                    $expected
+                )
+            );
+        }
+
+        $this->verified_token_decimals = (int) $actual;
+        return $this->verified_token_decimals;
     }
 
     public function sort_transfers_newest_first($left, $right)
@@ -888,7 +948,7 @@ class JIULIU_CRYPTO_EVM
         $headers = array(
             'Accept'       => 'application/json',
             'Content-Type' => 'application/json',
-            'User-Agent'   => 'Jiuliu-Crypto-Payment/' . (defined('JIULIU_CRYPTO_VERSION') ? JIULIU_CRYPTO_VERSION : '2.0.0') . '; ' . home_url('/'),
+            'User-Agent'   => 'Jiuliu-Crypto-Payment/' . (defined('JIULIU_CRYPTO_VERSION') ? JIULIU_CRYPTO_VERSION : '2.1.0') . '; ' . home_url('/'),
         );
         if (isset($this->route['rpc_headers']) && is_array($this->route['rpc_headers'])) {
             foreach ($this->route['rpc_headers'] as $name => $value) {

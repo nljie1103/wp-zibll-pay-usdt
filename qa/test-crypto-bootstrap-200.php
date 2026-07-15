@@ -114,7 +114,7 @@ $required_classes = array(
 foreach ($required_classes as $class) {
     qa_200_assert(class_exists($class, false), 'New entrypoint did not load dependency ' . $class);
 }
-qa_200_same('2.0.0', JIULIU_CRYPTO_VERSION, 'Entrypoint version must be 2.0.0');
+qa_200_same('2.1.0', JIULIU_CRYPTO_VERSION, 'Entrypoint version must be 2.1.0');
 qa_200_same('jiuliu_crypto_settings', JIULIU_CRYPTO_Settings::OPTION_NAME, 'v2 must use only its new option name');
 
 $plugin = jiuliu_crypto_payment();
@@ -123,12 +123,12 @@ qa_200_assert(isset($GLOBALS['qa_hooks']['rest_api_init'], $GLOBALS['qa_hooks'][
 $plugin->zibll->register();
 qa_200_assert(isset($GLOBALS['qa_filters']['zibpay_payment_methods'], $GLOBALS['qa_filters']['zibpay_initiate_paysdk']), 'Zibll gateway filters were not registered');
 
-// A first installation seeds exactly the seven conservative presets, all
+// A first installation seeds exactly the issuer-verified route catalog, all
 // disabled and without merchant-owned receiver/provider data.
 $settings_seed = new JIULIU_CRYPTO_Settings();
 $settings_seed->install_defaults();
 $seeded = get_option(JIULIU_CRYPTO_Settings::OPTION_NAME);
-qa_200_same(7, count($seeded['payment_routes']), 'Fresh install must seed seven routes');
+qa_200_same(36, count($seeded['payment_routes']), 'Fresh install must seed the 36-route catalog');
 foreach ($seeded['payment_routes'] as $route) {
     if (is_wp_error($route)) {
         qa_200_assert(false, 'Fresh route seeding produced WP_Error: ' . $route->get_error_code());

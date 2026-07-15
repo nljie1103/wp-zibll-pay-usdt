@@ -9,6 +9,8 @@ class JIULIU_CRYPTO_Settings
 {
     const OPTION_NAME = 'jiuliu_crypto_settings';
     const USDT_CONTRACT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
+    const MIN_FIXED_RATE = 1;
+    const MAX_FIXED_RATE = 30;
 
     private $cache;
 
@@ -177,8 +179,11 @@ class JIULIU_CRYPTO_Settings
         }
 
         $fixed_rate = isset($input['fixed_rate']) ? (float) $input['fixed_rate'] : 0;
-        if (!is_finite($fixed_rate) || $fixed_rate < 1 || $fixed_rate > 20) {
-            return new WP_Error('invalid_rate', __('人民币固定/备用汇率必须在 1 至 20 之间。', 'jiuliu-crypto-payment'));
+        if (!is_finite($fixed_rate) || $fixed_rate < self::MIN_FIXED_RATE || $fixed_rate > self::MAX_FIXED_RATE) {
+            return new WP_Error(
+                'invalid_rate',
+                __('全局人民币备用汇率必须在 1 至 30 之间。', 'jiuliu-crypto-payment')
+            );
         }
         $new['fixed_rate'] = number_format($fixed_rate, 8, '.', '');
 
@@ -231,8 +236,9 @@ class JIULIU_CRYPTO_Settings
 
         update_option(self::OPTION_NAME, $new, false);
         $this->cache = null;
-        delete_transient('jiuliu_crypto_auto_rate_usdt');
-        delete_transient('jiuliu_crypto_auto_rate_usdc');
+        foreach (array('usdt', 'usdc', 'fdusd', 'eurc', 'pyusd') as $asset_id) {
+            delete_transient('jiuliu_crypto_auto_rate_' . $asset_id);
+        }
         return $new;
     }
 

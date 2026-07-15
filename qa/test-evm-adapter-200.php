@@ -1,9 +1,9 @@
 <?php
 
-// Standalone strict EVM/ERC-20 adapter coverage for 2.0.0.
+// Standalone strict EVM/ERC-20 adapter coverage for 2.1.0.
 
 define('ABSPATH', __DIR__ . '/');
-define('JIULIU_CRYPTO_VERSION', '2.0.0');
+define('JIULIU_CRYPTO_VERSION', '2.1.0');
 
 $GLOBALS['qa_rpc_queue'] = array();
 $GLOBALS['qa_rpc_calls'] = array();
@@ -404,11 +404,13 @@ if (is_wp_error($scan_ambiguous)
     qa_evm_fail('scan did not isolate an ambiguous transaction while preserving an unrelated valid transfer');
 }
 
-// Connection test explicitly probes eth_getLogs so providers that disable log
-// access fail during setup rather than after an invoice is created.
+// Connection test verifies chain identity, calls ERC-20 decimals(), and probes
+// eth_getLogs so wrong contracts/metadata and incapable providers fail before
+// an invoice is created.
 qa_evm_reset();
 $GLOBALS['qa_rpc_queue'] = array(
     '0x1',
+    qa_evm_data(6),
     '0x64',
     array('qa_error' => array('code' => -32601, 'message' => "eth_getLogs\n disabled")),
 );
@@ -419,10 +421,52 @@ if (false !== strpos($unsupported->get_error_message(), "\n")) {
 }
 
 qa_evm_reset();
-$GLOBALS['qa_rpc_queue'] = array('0x1', '0x64', array());
+$GLOBALS['qa_rpc_queue'] = array('0x1', qa_evm_data(6), '0x64', array());
 $connection = (new JIULIU_CRYPTO_EVM($route))->test_connection();
-if (is_wp_error($connection) || empty($connection['eth_getlogs']) || 100 !== $connection['latest_block']) {
+if (is_wp_error($connection)
+    || empty($connection['eth_getlogs'])
+    || empty($connection['eth_call'])
+    || 6 !== $connection['token_decimals']
+    || 100 !== $connection['latest_block']) {
     qa_evm_fail('valid RPC endpoint failed the connection capability test');
+}
+$connection_methods = array();
+foreach ($GLOBALS['qa_rpc_calls'] as $call) {
+    $connection_methods[] = $call['request']['method'];
+}
+if ($connection_methods !== array('eth_chainId', 'eth_call', 'eth_blockNumber', 'eth_getLogs')) {
+    qa_evm_fail('connection test did not use the strict metadata/capability sequence');
+}
+$decimals_call = $GLOBALS['qa_rpc_calls'][1]['request']['params'];
+if ('latest' !== $decimals_call[1]
+    || $contract !== $decimals_call[0]['to']
+    || '0x313ce567' !== $decimals_call[0]['data']) {
+    qa_evm_fail('connection test did not call decimals() on the configured token contract');
+}
+
+qa_evm_reset();
+$GLOBALS['qa_rpc_queue'] = array('0x1', qa_evm_data(18));
+$wrong_decimals = (new JIULIU_CRYPTO_EVM($route))->test_connection();
+qa_evm_expect_error($wrong_decimals, 'evm_token_decimals_mismatch', 'on-chain decimal mismatch was accepted');
+if (2 !== count($GLOBALS['qa_rpc_calls'])) {
+    qa_evm_fail('decimal mismatch did not stop before block/log capability probes');
+}
+
+qa_evm_reset();
+$GLOBALS['qa_rpc_queue'] = array('0x1', '0x06');
+$malformed_decimals = (new JIULIU_CRYPTO_EVM($route))->test_connection();
+qa_evm_expect_error($malformed_decimals, 'evm_invalid_token_decimals_response', 'non-ABI decimals response was accepted');
+
+// BSC's widely used Binance-Peg stablecoins use 18 decimals. Verify that the
+// adapter keeps the full metadata rather than silently falling back to six.
+$bsc_route = $route;
+$bsc_route['chain_id'] = '56';
+$bsc_route['decimals'] = 18;
+qa_evm_reset();
+$GLOBALS['qa_rpc_queue'] = array('0x38', qa_evm_data(18), '0x64', array());
+$bsc_connection = (new JIULIU_CRYPTO_EVM($bsc_route))->test_connection();
+if (is_wp_error($bsc_connection) || 18 !== $bsc_connection['token_decimals']) {
+    qa_evm_fail('valid 18-decimal BSC token metadata was rejected');
 }
 
 // Transport/protocol failures expose stable diagnostic error codes.

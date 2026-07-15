@@ -54,6 +54,13 @@ class JIULIU_CRYPTO_Invoices
         $route['chain_id'] = isset($route['chain_id']) ? (string) $route['chain_id'] : '';
         $route['asset_symbol'] = !empty($route['asset_symbol']) ? strtoupper(sanitize_key($route['asset_symbol'])) : 'USDT';
         $route['asset_decimals'] = isset($route['asset_decimals']) ? absint($route['asset_decimals']) : (isset($route['decimals']) ? absint($route['decimals']) : 6);
+        // Customer-entered precision is deliberately capped at six places even
+        // when the token contract uses 18 base-unit decimals. Shared-address
+        // matching then scales the visible tail into the hidden chain units.
+        $requested_display_decimals = isset($route['display_decimals'])
+            ? absint($route['display_decimals'])
+            : min(6, $route['asset_decimals']);
+        $route['display_decimals'] = min(6, $route['asset_decimals'], $requested_display_decimals);
         $route['network'] = !empty($route['network']) ? sanitize_text_field($route['network']) : strtoupper($route['chain_key']);
         $route['contract_address'] = isset($route['contract_address']) ? trim((string) $route['contract_address']) : '';
         $route['receive_address'] = isset($route['receive_address']) ? trim((string) $route['receive_address']) : '';
@@ -65,6 +72,14 @@ class JIULIU_CRYPTO_Invoices
         // never silently fall back to an adapter default.
         $route['decimals'] = $route['asset_decimals'];
         $route['confirmations'] = $route['required_confirmations'];
+        $identity_contract = 'evm' === $route['adapter']
+            ? strtolower($route['contract_address'])
+            : $route['contract_address'];
+        $route['asset_identity'] = hash(
+            'sha256',
+            $route['adapter'] . '|' . strtolower((string) $route['chain_id']) . '|'
+                . $identity_contract . '|' . $route['asset_decimals']
+        );
         return $route;
     }
 
@@ -101,7 +116,12 @@ class JIULIU_CRYPTO_Invoices
         $route = $this->normalize_route($route);
         $contract = 'evm' === $route['adapter'] ? strtolower($route['contract_address']) : $route['contract_address'];
         $receiver = 'evm' === $route['adapter'] ? strtolower($route['receive_address']) : $route['receive_address'];
-        return hash('sha256', $route['adapter'] . '|' . strtolower($route['chain_key']) . '|' . (string) $route['chain_id'] . '|' . $contract . '|' . $receiver);
+        return hash(
+            'sha256',
+            $route['adapter'] . '|' . strtolower($route['chain_key']) . '|' . (string) $route['chain_id']
+                . '|' . $contract . '|' . $receiver . '|' . $route['asset_identity']
+                . '|decimals|' . $route['asset_decimals'] . '|display|' . $route['display_decimals']
+        );
     }
 
     /**
@@ -687,7 +707,11 @@ class JIULIU_CRYPTO_Invoices
         $order_num = isset($order_data['order_num']) ? sanitize_text_field($order_data['order_num']) : '';
         $payment_id = isset($order_data['payment_id']) ? absint($order_data['payment_id']) : 0;
         $user_id = isset($order_data['user_id']) ? absint($order_data['user_id']) : 0;
-        $local_amount = isset($order_data['local_price']) ? (float) $order_data['local_price'] : (isset($order_data['order_price']) ? (float) $order_data['order_price'] : 0);
+        $local_amount_input = isset($order_data['local_price'])
+            ? $order_data['local_price']
+            : (isset($order_data['order_price']) ? $order_data['order_price'] : '0');
+        $local_amount_decimal = JIULIU_CRYPTO_Util::normalize_decimal($local_amount_input, 8, false);
+        $local_amount = false !== $local_amount_decimal ? (float) $local_amount_decimal : 0;
         $requested_method = !empty($order_data['payment_method'])
             ? sanitize_key($order_data['payment_method'])
             : (!empty($order_data['method']) ? sanitize_key($order_data['method']) : '');
@@ -714,17 +738,20 @@ class JIULIU_CRYPTO_Invoices
             }
             $route = $current_route;
             $order_num = sanitize_text_field($current_payment['order_num']);
-            $parent_amount = isset($current_payment['price']) ? (float) $current_payment['price'] : 0;
+            $parent_amount_input = isset($current_payment['price']) ? $current_payment['price'] : '0';
+            $parent_amount_decimal = JIULIU_CRYPTO_Util::normalize_decimal($parent_amount_input, 8, false);
+            $parent_amount = false !== $parent_amount_decimal ? (float) $parent_amount_decimal : 0;
             if ($parent_amount <= 0 || (int) round($parent_amount * 100) !== (int) round($local_amount * 100)) {
                 return new WP_Error('zibll_price_changed', __('子比主支付单金额已经变化，请重新下单。', 'jiuliu-crypto-payment'));
             }
             $local_amount = $parent_amount;
+            $local_amount_decimal = $parent_amount_decimal;
         }
         if (!$route) {
             return new WP_Error('payment_route_unavailable', __('所选币种与网络未启用或配置不完整，请重新选择支付方式。', 'jiuliu-crypto-payment'));
         }
-        if (6 !== (int) $route['asset_decimals']) {
-            return new WP_Error('unsupported_asset_decimals', __('2.0.0 安全版仅接受 6 位精度的 USDT/USDC 路线。', 'jiuliu-crypto-payment'));
+        if (!in_array((int) $route['asset_decimals'], array(6, 18), true)) {
+            return new WP_Error('unsupported_asset_decimals', __('当前安全报价器仅接受 6 位或 18 位链上精度的代币路线。', 'jiuliu-crypto-payment'));
         }
         $quote_scope = $this->route_scope($route);
 
@@ -807,22 +834,33 @@ class JIULIU_CRYPTO_Invoices
         }
 
         $rate_data = $this->rate->get_rate(false, $route['asset_symbol'], $route);
-        $rate = !empty($rate_data['rate']) ? (float) $rate_data['rate'] : 0;
-        if ($rate <= 0) {
+        $rate_decimal = !empty($rate_data['rate'])
+            ? JIULIU_CRYPTO_Util::normalize_decimal($rate_data['rate'], 8, false)
+            : false;
+        $rate = false !== $rate_decimal ? (float) $rate_decimal : 0;
+        if ($rate <= 0 || false === $local_amount_decimal) {
             return new WP_Error('invalid_exchange_rate', __('当前无法取得有效汇率，请稍后重试。', 'jiuliu-crypto-payment'));
         }
 
-        $markup = (float) $this->settings->get('rate_markup', 0);
-        $quoted = ($local_amount / $rate) * (1 + ($markup / 100));
-        if ($quoted <= 0 || !is_finite($quoted) || ($quoted * 1000000) > (PHP_INT_MAX - 10000)) {
+        $markup_decimal = JIULIU_CRYPTO_Util::normalize_decimal($this->settings->get('rate_markup', '0'), 4, true);
+        $display_decimals = (int) $route['display_decimals'];
+        $base_display_raw = false !== $markup_decimal
+            ? JIULIU_CRYPTO_Util::quote_to_raw($local_amount_decimal, $rate_decimal, $markup_decimal, $display_decimals)
+            : false;
+        if (false === $base_display_raw || '0' === $base_display_raw) {
             return new WP_Error('invalid_quote', __('链上支付报价计算失败。', 'jiuliu-crypto-payment'));
         }
 
-        $base_raw = (int) ceil($quoted * 1000000);
         // The unique tail is an order identifier. Keep it below 1% of the
-        // quote and below 0.001 USDT, while requiring enough capacity that a
-        // handful of abandoned same-price orders cannot exhaust the pool.
-        $max_unique_tail = min(999, max(1, (int) floor($base_raw * 0.01)));
+        // displayed quote and below 0.001 token. For an 18-decimal contract,
+        // each visible tail unit is scaled by 10^12 chain base units.
+        $one_percent = JIULIU_CRYPTO_Util::raw_divide_floor($base_display_raw, '100');
+        if (false === $one_percent) {
+            return new WP_Error('invalid_quote', __('链上支付报价计算失败。', 'jiuliu-crypto-payment'));
+        }
+        $max_unique_tail = JIULIU_CRYPTO_Util::raw_compare($one_percent, '999') >= 0
+            ? 999
+            : max(1, (int) $one_percent);
         if ($max_unique_tail < 500) {
             return new WP_Error(
                 'amount_too_small_for_unique_quote',
@@ -842,11 +880,18 @@ class JIULIU_CRYPTO_Invoices
         $start_tail = wp_rand(1, $max_unique_tail);
         for ($attempt = 0; $attempt < $max_unique_tail; $attempt++) {
             $tail = (($start_tail - 1 + $attempt) % $max_unique_tail) + 1;
-            $expected_raw = (string) ($base_raw + $tail);
+            $expected_display_raw = JIULIU_CRYPTO_Util::raw_add($base_display_raw, (string) $tail);
+            $expected_raw = JIULIU_CRYPTO_Util::raw_scale10(
+                $expected_display_raw,
+                (int) $route['asset_decimals'] - $display_decimals
+            );
+            if (false === $expected_raw) {
+                return new WP_Error('invalid_quote', __('链上支付报价计算失败。', 'jiuliu-crypto-payment'));
+            }
             if (isset($used_raws[JIULIU_CRYPTO_Util::normalize_raw($expected_raw)])) {
                 continue;
             }
-            $asset_amount = JIULIU_CRYPTO_Util::raw_to_decimal($expected_raw, $route['asset_decimals']);
+            $asset_amount = JIULIU_CRYPTO_Util::raw_to_decimal($expected_display_raw, $display_decimals);
             $active_key = hash('sha256', $quote_scope . '|' . $expected_raw);
 
             $data = array(
@@ -854,11 +899,17 @@ class JIULIU_CRYPTO_Invoices
                 'payment_id'       => $payment_id,
                 'zibll_order_num'  => $order_num,
                 'user_id'          => $user_id,
-                'local_amount'     => number_format($local_amount, 8, '.', ''),
+                'local_amount'     => JIULIU_CRYPTO_Util::raw_to_decimal(
+                    JIULIU_CRYPTO_Util::decimal_to_raw($local_amount_decimal, 8),
+                    8
+                ),
                 'local_currency'   => (string) apply_filters('jiuliu_crypto_local_currency', 'CNY', $order_data),
-                'rate'             => number_format($rate, 8, '.', ''),
+                'rate'             => JIULIU_CRYPTO_Util::raw_to_decimal(
+                    JIULIU_CRYPTO_Util::decimal_to_raw($rate_decimal, 8),
+                    8
+                ),
                 'rate_source'      => substr(sanitize_key($rate_data['source']), 0, 32),
-                'markup'           => number_format($markup, 4, '.', ''),
+                'markup'           => $markup_decimal,
                 'asset_amount'     => $asset_amount,
                 'expected_raw'     => $expected_raw,
                 'route_id'         => $route['id'],
@@ -1047,6 +1098,7 @@ class JIULIU_CRYPTO_Invoices
         $payment_method = (string) $invoice->payment_method;
         $asset_symbol = !empty($invoice->asset_symbol) ? (string) $invoice->asset_symbol : 'USDT';
         $network = !empty($invoice->network) ? (string) $invoice->network : 'TRC20';
+        $display_amount = $this->expected_display_amount($invoice);
 
         return array(
             'error'        => 0,
@@ -1054,8 +1106,8 @@ class JIULIU_CRYPTO_Invoices
             'url_qrcode'   => $qrcode,
             'check_sdk'    => 'jiuliu_crypto_v2',
             'order_name'   => sprintf(__('%1$s · %2$s 链上支付', 'jiuliu-crypto-payment'), $asset_symbol, $network),
-            'settle_mark'  => 'USDT' === $asset_symbol ? '₮' : '$',
-            'settle_price' => $invoice->asset_amount,
+            'settle_mark'  => 'USDT' === $asset_symbol ? '₮' : ('EURC' === $asset_symbol ? '€' : '$'),
+            'settle_price' => $display_amount,
             'settle_unit'  => ' ' . $asset_symbol,
             'jiuliu_crypto'=> 1,
             'jiuliu_crypto_label' => $asset_symbol . ' · ' . $network,
@@ -1070,7 +1122,19 @@ class JIULIU_CRYPTO_Invoices
         $symbol = !empty($invoice->asset_symbol) ? strtoupper((string) $invoice->asset_symbol) : 'USDT';
         $network = !empty($invoice->network) ? (string) $invoice->network : 'TRON (TRC20)';
         $fee_symbol = !empty($invoice->fee_symbol) ? strtoupper((string) $invoice->fee_symbol) : 'TRX';
-        $decimals = isset($invoice->asset_decimals) ? absint($invoice->asset_decimals) : 6;
+        $decimals = min(6, isset($invoice->asset_decimals) ? absint($invoice->asset_decimals) : 6);
+        $display_amount = $this->expected_display_amount($invoice);
+        $route = $this->route_from_invoice($invoice);
+        $is_custodial_peg = !empty($route['asset_type']) && 'custodial_peg' === (string) $route['asset_type'];
+        if (!$is_custodial_peg && false !== stripos($network, 'Binance-Peg')) {
+            $is_custodial_peg = true;
+        }
+        $origin_notice = '';
+        if ($is_custodial_peg) {
+            $origin_notice = '<div class="jiuliu-crypto-warning jiuliu-crypto-origin-warning"><strong>'
+                . esc_html__('托管锚定资产提示', 'jiuliu-crypto-payment') . '</strong><br>'
+                . esc_html__('此路线是托管锚定版本，不等同于代币发行方在该网络原生发行；务必逐字核对网络和合约地址。', 'jiuliu-crypto-payment') . '</div>';
+        }
         $manual = '';
 
         if ($this->settings->get('frontend_manual_txid')) {
@@ -1089,8 +1153,9 @@ class JIULIU_CRYPTO_Invoices
         return '<div class="jiuliu-crypto-details" data-invoice="' . esc_attr($invoice->id) . '" data-route-label="' . esc_attr($symbol . ' · ' . $network) . '">'
             . '<div class="jiuliu-crypto-warning"><strong>' . sprintf(esc_html__('仅限 %1$s · %2$s', 'jiuliu-crypto-payment'), esc_html($symbol), esc_html($network)) . '</strong><br>'
             . esc_html__('币种、网络、代币合约和收款地址必须与本页完全一致；使用其他网络可能导致资产无法找回。', 'jiuliu-crypto-payment') . '</div>'
-            . '<div class="jiuliu-crypto-field"><span>' . esc_html__('网站必须完整收到的金额（精确）', 'jiuliu-crypto-payment') . '</span><div><b>' . esc_html($invoice->asset_amount) . ' ' . esc_html($symbol) . '</b>'
-            . '<button type="button" class="jiuliu-crypto-copy but hollow" data-copy="' . esc_attr($invoice->asset_amount) . '">' . esc_html__('复制', 'jiuliu-crypto-payment') . '</button></div></div>'
+            . $origin_notice
+            . '<div class="jiuliu-crypto-field"><span>' . esc_html__('网站必须完整收到的金额（精确）', 'jiuliu-crypto-payment') . '</span><div><b>' . esc_html($display_amount) . ' ' . esc_html($symbol) . '</b>'
+            . '<button type="button" class="jiuliu-crypto-copy but hollow" data-copy="' . esc_attr($display_amount) . '">' . esc_html__('复制', 'jiuliu-crypto-payment') . '</button></div></div>'
             . '<div class="jiuliu-crypto-warning jiuliu-crypto-fee-warning"><strong>' . esc_html__('请确保网站实际收到上述完整金额。', 'jiuliu-crypto-payment') . '</strong><br>'
             . sprintf(esc_html__('链上网络费或交易所提币手续费由付款方另行承担，不得从页面金额中扣除；本路线手续费通常使用 %s 或由交易所另收。', 'jiuliu-crypto-payment'), esc_html($fee_symbol)) . '</div>'
             . '<div class="jiuliu-crypto-field jiuliu-crypto-address"><span>' . sprintf(esc_html__('%s 收款地址', 'jiuliu-crypto-payment'), esc_html($network)) . '</span><div><code>' . esc_html($invoice->receive_address) . '</code>'
@@ -1101,6 +1166,28 @@ class JIULIU_CRYPTO_Invoices
             . '<div class="jiuliu-crypto-expiry">' . sprintf(esc_html__('请在 %1$s 前完成转账，必须完整支付页面显示的全部 %2$d 位小数；末尾小数用于唯一匹配订单。', 'jiuliu-crypto-payment'), esc_html($expires_local), $decimals) . '</div>'
             . $manual
             . '</div>';
+    }
+
+    /**
+     * Derive the payable text from immutable raw units. MySQL pads the
+     * DECIMAL(36,18) convenience column, so it must not control what the payer
+     * sees or copies for an 18-decimal token route.
+     */
+    private function expected_display_amount($invoice)
+    {
+        $asset_decimals = isset($invoice->asset_decimals) ? absint($invoice->asset_decimals) : 6;
+        $display_decimals = min(6, $asset_decimals);
+        if (isset($invoice->expected_raw)) {
+            $amount = JIULIU_CRYPTO_Util::raw_to_display_decimal(
+                (string) $invoice->expected_raw,
+                $asset_decimals,
+                $display_decimals
+            );
+            if (false !== $amount) {
+                return $amount;
+            }
+        }
+        return isset($invoice->asset_amount) ? (string) $invoice->asset_amount : '0';
     }
 
     public function check_order($order_num, $force = false)
@@ -1678,7 +1765,7 @@ class JIULIU_CRYPTO_Invoices
         if ('public' === $source && !$force && (!$amount_matches || !$time_matches)) {
             $code = !$amount_matches ? 'amount_mismatch' : 'late_payment';
             $note = !$amount_matches
-                ? sprintf(__('已记录交易哈希：实收 %1$s %3$s，应收 %2$s %3$s；交易尚未绑定支付单，等待管理员核对。', 'jiuliu-crypto-payment'), JIULIU_CRYPTO_Util::raw_to_decimal($actual_raw, $decimals), $invoice->asset_amount, $symbol)
+                ? sprintf(__('已记录交易哈希：实收 %1$s %3$s，应收 %2$s %3$s；交易尚未绑定支付单，等待管理员核对。', 'jiuliu-crypto-payment'), JIULIU_CRYPTO_Util::raw_to_decimal($actual_raw, $decimals), $this->expected_display_amount($invoice), $symbol)
                 : __('已记录交易哈希：链上时间晚于订单有效期；交易尚未绑定支付单，等待管理员核对。', 'jiuliu-crypto-payment');
 
             $current = $this->db->get_invoice($invoice->id);
@@ -1765,7 +1852,7 @@ class JIULIU_CRYPTO_Invoices
         if (!$force && (!$amount_matches || !$time_matches)) {
             $code = !$amount_matches ? 'amount_mismatch' : 'late_payment';
             $note = !$amount_matches
-                ? sprintf(__('实收 %1$s %3$s，应收 %2$s %3$s，等待管理员处理。', 'jiuliu-crypto-payment'), JIULIU_CRYPTO_Util::raw_to_decimal($actual_raw, $decimals), $invoice->asset_amount, $symbol)
+                ? sprintf(__('实收 %1$s %3$s，应收 %2$s %3$s，等待管理员处理。', 'jiuliu-crypto-payment'), JIULIU_CRYPTO_Util::raw_to_decimal($actual_raw, $decimals), $this->expected_display_amount($invoice), $symbol)
                 : __('交易已确认，但链上时间晚于订单有效期，等待管理员处理。', 'jiuliu-crypto-payment');
 
             $review = $this->transition_processing_to_review($invoice, $txid, $code, $note);
@@ -2234,7 +2321,7 @@ class JIULIU_CRYPTO_Invoices
         $message = sprintf(
             __("%4\$s · %5\$s 支付已确认。\n\n站内订单：%1\$s\n到账金额：%2\$s %4\$s\n交易哈希：%3\$s\n状态：子比订单已完成。", 'jiuliu-crypto-payment'),
             $invoice->zibll_order_num,
-            $invoice->actual_amount ?: $invoice->asset_amount,
+            $invoice->actual_amount ?: $this->expected_display_amount($invoice),
             $invoice->txid,
             $symbol,
             $network
