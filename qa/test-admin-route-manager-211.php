@@ -1,6 +1,6 @@
 <?php
 
-// 2.1.1 wp-admin route-manager contract. This intentionally renders the real
+// 2.1.2 wp-admin route-manager contract. This intentionally renders the real
 // private settings screen with lightweight WordPress stubs, then inspects the
 // resulting form. It catches presentation regressions that static grep alone
 // cannot see (missing disabled routes, duplicate names, leaked credentials,
@@ -8,12 +8,13 @@
 
 define('ABSPATH', __DIR__ . '/');
 define('JIULIU_CRYPTO_URL', 'https://example.test/wp-content/plugins/jiuliu-crypto-payment/');
-define('JIULIU_CRYPTO_VERSION', '2.1.1');
+define('JIULIU_CRYPTO_VERSION', '2.1.2');
 define('MINUTE_IN_SECONDS', 60);
 
 $GLOBALS['qa_211_options'] = array();
 $GLOBALS['qa_211_enqueued_styles'] = array();
 $GLOBALS['qa_211_enqueued_scripts'] = array();
+$GLOBALS['qa_211_transients'] = array();
 
 class WP_Error
 {
@@ -60,12 +61,17 @@ function selected($selected, $current = true, $echo = true)
     return $result;
 }
 function admin_url($path = '') { return 'https://example.test/wp-admin/' . ltrim((string) $path, '/'); }
+function wp_create_nonce($action) { return 'qa-nonce-' . $action; }
 function add_action($hook, $callback, $priority = 10, $accepted_args = 1) { return true; }
 function add_menu_page() { return true; }
 function wp_nonce_field($action) { echo '<input type="hidden" name="_wpnonce" value="qa">'; }
-function submit_button($text, $type = 'primary', $name = 'submit', $wrap = true)
+function submit_button($text, $type = 'primary', $name = 'submit', $wrap = true, $other_attributes = array())
 {
-    $button = '<button type="submit"' . ('' !== (string) $name ? ' name="' . esc_attr($name) . '"' : '') . '>' . esc_html($text) . '</button>';
+    $attributes = '';
+    foreach ((array) $other_attributes as $key => $value) {
+        $attributes .= ' ' . esc_attr($key) . '="' . esc_attr($value) . '"';
+    }
+    $button = '<button type="submit"' . ('' !== (string) $name ? ' name="' . esc_attr($name) . '"' : '') . $attributes . '>' . esc_html($text) . '</button>';
     echo $wrap ? '<p class="submit">' . $button . '</p>' : $button;
 }
 function wp_enqueue_style($handle, $src = '', $deps = array(), $version = false)
@@ -85,7 +91,10 @@ function update_option($key, $value, $autoload = null)
     $GLOBALS['qa_211_options'][$key] = $value;
     return true;
 }
-function delete_transient($key) { return true; }
+function get_transient($key) { return isset($GLOBALS['qa_211_transients'][$key]) ? $GLOBALS['qa_211_transients'][$key] : false; }
+function set_transient($key, $value, $expiration = 0) { $GLOBALS['qa_211_transients'][$key] = $value; return true; }
+function delete_transient($key) { unset($GLOBALS['qa_211_transients'][$key]); return true; }
+function get_current_user_id() { return 1; }
 
 require_once __DIR__ . '/../jiuliu-crypto-payment/includes/class-jiuliu-crypto-util.php';
 require_once __DIR__ . '/../jiuliu-crypto-payment/includes/class-jiuliu-crypto-routes.php';
@@ -155,6 +164,9 @@ $routes['usdt_trc20']['enabled'] = 1;
 $routes['usdt_trc20']['receive_address'] = $tron_address;
 $routes['usdt_trc20']['api_key'] = $tron_secret;
 $routes['usdt_trc20']['rate_cny'] = '7.20000000';
+$routes['usdc_arbitrum']['enabled'] = 0;
+$routes['usdc_arbitrum']['receive_address'] = '0x3333333333333333333333333333333333333333';
+$routes['usdc_arbitrum']['rpc_url'] = 'https://arbitrum-configured.example.test/rpc';
 $seed['payment_routes'] = array_values($routes);
 $seed['coingecko_api_key'] = 'qa-private-coingecko-key-must-never-render';
 $GLOBALS['qa_211_options'][JIULIU_CRYPTO_Settings::OPTION_NAME] = $seed;
@@ -198,13 +210,26 @@ $config_details = $xpath->query('//details[@data-route-config]');
 qa_211_assert(count($routes) === $config_details->length, 'not every all(false) route has one real configuration panel');
 qa_211_assert(0 === $xpath->query('//details[@data-route-config and @open]')->length, 'a route configuration panel is open by default');
 qa_211_assert(count($routes) === $xpath->query('//*[@data-route-summary]')->length, 'route summaries do not cover the complete catalog exactly once');
-qa_211_assert(0 < $xpath->query('//button[@data-route-set-enabled]')->length, 'route summaries lack enable/disable actions');
+qa_211_assert(0 === $xpath->query('//button[@data-route-set-enabled]')->length, 'legacy combined enable/open action still exists');
+qa_211_assert(3 === $xpath->query('//*[@data-route-summary and @data-route-config-state="configured"]')->length, 'configured and enabled states were not classified independently');
+qa_211_assert(3 === $xpath->query('//button[@data-route-toggle]')->length, 'configured routes do not have exactly one immediate toggle each');
+qa_211_assert(0 === $xpath->query('//button[@data-route-toggle and @data-route-open]')->length, 'a quick toggle also opens configuration');
+qa_211_assert(3 === $xpath->query('//button[@data-route-open and normalize-space(.)="编辑配置"]')->length, 'configured routes lack edit-only actions');
+qa_211_assert(count($routes) - 3 === $xpath->query('//button[@data-route-open and normalize-space(.)="开始配置"]')->length, 'unconfigured routes lack start-configuration actions');
+qa_211_assert(1 === $xpath->query('//*[self::h3 and normalize-space(.)="已配置路线"]')->length, 'configured route section title is missing');
+qa_211_assert(0 === $xpath->query('//*[self::h3 and normalize-space(.)="已启用路线"]')->length, 'legacy enabled route section title remains');
+qa_211_assert(1 === $xpath->query('//select[@data-route-config-filter]')->length, 'configuration-state filter is missing');
+qa_211_assert(1 === $xpath->query('//select[@data-route-runtime-filter]')->length, 'runtime-state filter is missing');
+qa_211_assert(1 === $xpath->query('//button[@data-save-all and normalize-space(.)="保存全部设置"]')->length, 'global save-all fallback is missing or mislabeled');
 
 // Native details/summary must remain usable if JavaScript is blocked.
 foreach ($config_details as $details) {
     qa_211_assert(!$details->hasAttribute('hidden'), 'route configuration is hidden without JavaScript');
     $summaries = $xpath->query('./summary', $details);
     qa_211_assert(1 === $summaries->length, 'route configuration lacks a native direct-child summary');
+    qa_211_assert(1 === $xpath->query('.//button[@data-route-cancel]', $details)->length, 'route configuration lacks cancel action');
+    qa_211_assert(1 === $xpath->query('.//button[@data-route-save="save_route"]', $details)->length, 'route configuration lacks save action');
+    qa_211_assert(1 === $xpath->query('.//button[@data-route-save="save_and_enable_route" or @data-route-save="disable_route"]', $details)->length, 'route configuration lacks explicit enable/disable save action');
 }
 qa_211_assert(count($routes) === $xpath->query('//details[contains(concat(" ", normalize-space(@class), " "), " jiuliu-route-advanced ")]')->length, 'advanced/security metadata is not isolated once per route');
 
@@ -249,6 +274,7 @@ foreach ($routes as $route_id => $route) {
 $disabled_id = 'usdc_arbitrum';
 qa_211_assert(empty($routes[$disabled_id]['enabled']), 'disabled-route fixture unexpectedly enabled');
 qa_211_assert(isset($all_names['settings[payment_routes][' . $disabled_id . '][receive_address]']), 'disabled route configuration was dropped from the form');
+qa_211_assert(1 === $xpath->query('//*[@data-route-summary and @data-route-id="usdc_arbitrum" and @data-route-config-state="configured" and @data-route-runtime-state="disabled"]')->length, 'configured disabled route was moved back to add-route area');
 
 // The configured address is submitted in full, while its summary is compact.
 $address_nodes = qa_211_named_nodes($xpath, 'settings[payment_routes][usdc_base][receive_address]');
@@ -273,10 +299,10 @@ $submitted['enabled'] = 0;
 $submitted_routes = qa_211_route_map($seed['payment_routes']);
 $submitted_routes['usdc_base']['enabled'] = 0;
 $submitted_routes['usdc_base']['rpc_headers_json'] = '';
-$submitted_routes['usdc_arbitrum']['enabled'] = 1;
-$submitted_routes['usdc_arbitrum']['receive_address'] = '0x2222222222222222222222222222222222222222';
-$submitted_routes['usdc_arbitrum']['rpc_url'] = 'https://arbitrum.example.test/rpc';
-$submitted_routes['usdc_arbitrum']['rpc_headers_json'] = '';
+$submitted_routes['usdc_optimism']['enabled'] = 1;
+$submitted_routes['usdc_optimism']['receive_address'] = '0x2222222222222222222222222222222222222222';
+$submitted_routes['usdc_optimism']['rpc_url'] = 'https://optimism.example.test/rpc';
+$submitted_routes['usdc_optimism']['rpc_headers_json'] = '';
 $submitted['payment_routes'] = $submitted_routes;
 $saved = $settings->update($submitted);
 qa_211_assert(!is_wp_error($saved), 'full route-manager settings submission was rejected');
@@ -290,9 +316,54 @@ qa_211_assert(
         && 'Bearer ' . $evm_secret === $saved_routes['usdc_base']['rpc_headers']['Authorization'],
     'blank secret editor did not preserve the disabled route credential'
 );
-qa_211_assert(!empty($saved_routes['usdc_arbitrum']['enabled']), 'configured route was not enabled');
-qa_211_assert('0x2222222222222222222222222222222222222222' === $saved_routes['usdc_arbitrum']['receive_address'], 'newly enabled route lost its receiver configuration');
-qa_211_assert('https://arbitrum.example.test/rpc' === $saved_routes['usdc_arbitrum']['rpc_url'], 'newly enabled route lost its RPC configuration');
+qa_211_assert(!empty($saved_routes['usdc_optimism']['enabled']), 'configured route was not enabled');
+qa_211_assert('0x2222222222222222222222222222222222222222' === $saved_routes['usdc_optimism']['receive_address'], 'newly enabled route lost its receiver configuration');
+qa_211_assert('https://optimism.example.test/rpc' === $saved_routes['usdc_optimism']['rpc_url'], 'newly enabled route lost its RPC configuration');
+
+// Exercise the server-authoritative single-route action context. JavaScript
+// may choose an action, but the server must whitelist it and enforce the
+// persisted enabled state plus last-route gateway confirmation.
+$prepare = new ReflectionMethod('JIULIU_CRYPTO_Admin', 'prepare_settings_action');
+$prepare->setAccessible(true);
+$action_input = $seed;
+$action_routes = qa_211_route_map($action_input['payment_routes']);
+$action_routes['usdc_arbitrum']['enabled'] = 1;
+$action_input['payment_routes'] = array_values($action_routes);
+$args = array(&$action_input, $seed, 'save_route', 'usdc_arbitrum', false);
+$prepared = $prepare->invokeArgs($admin, $args);
+qa_211_assert(true === $prepared, 'save_route action was rejected');
+$prepared_routes = qa_211_route_map($action_input['payment_routes']);
+qa_211_assert(empty($prepared_routes['usdc_arbitrum']['enabled']), 'save_route changed persisted enabled state');
+
+$action_input = $seed;
+$args = array(&$action_input, $seed, 'save_and_enable_route', 'usdc_arbitrum', false);
+$prepared = $prepare->invokeArgs($admin, $args);
+$prepared_routes = qa_211_route_map($action_input['payment_routes']);
+qa_211_assert(true === $prepared && !empty($prepared_routes['usdc_arbitrum']['enabled']), 'save_and_enable_route did not enable its target');
+
+$last_settings = $seed;
+$last_routes = qa_211_route_map($last_settings['payment_routes']);
+foreach ($last_routes as &$last_route) { $last_route['enabled'] = 0; }
+unset($last_route);
+$last_routes['usdt_trc20']['enabled'] = 1;
+$last_settings['enabled'] = 1;
+$last_settings['payment_routes'] = array_values($last_routes);
+$action_input = $last_settings;
+$args = array(&$action_input, $last_settings, 'disable_route', 'usdt_trc20', false);
+$prepared = $prepare->invokeArgs($admin, $args);
+qa_211_assert(is_wp_error($prepared) && 'last_enabled_route_confirmation_required' === $prepared->get_error_code(), 'last enabled route can be disabled without explicit gateway confirmation');
+$action_input = $last_settings;
+$args = array(&$action_input, $last_settings, 'disable_route', 'usdt_trc20', true);
+$prepared = $prepare->invokeArgs($admin, $args);
+$prepared_routes = qa_211_route_map($action_input['payment_routes']);
+qa_211_assert(true === $prepared && empty($prepared_routes['usdt_trc20']['enabled']) && empty($action_input['enabled']), 'confirmed last-route disable did not close both route and gateway');
+
+$action_input = $seed;
+$args = array(&$action_input, $seed, 'not_allowed', 'usdt_trc20', false);
+qa_211_assert(is_wp_error($prepare->invokeArgs($admin, $args)), 'unknown settings action was accepted');
+$action_input = $seed;
+$args = array(&$action_input, $seed, 'save_route', 'attacker_route', false);
+qa_211_assert(is_wp_error($prepare->invokeArgs($admin, $args)), 'non-whitelisted route id was accepted');
 
 $admin_source = file_get_contents(__DIR__ . '/../jiuliu-crypto-payment/includes/class-jiuliu-crypto-admin.php');
 $admin_js = file_get_contents(__DIR__ . '/../jiuliu-crypto-payment/assets/js/admin.js');
@@ -300,14 +371,25 @@ qa_211_assert(false !== strpos($admin_source, '->all(false)'), 'admin stopped lo
 qa_211_assert(false !== strpos($admin_js, 'data-route-open'), 'native admin script cannot open a selected route');
 qa_211_assert(false !== strpos($admin_js, 'data-route-search'), 'native admin script lacks route search handling');
 qa_211_assert(
-    false !== strpos($admin_js, 'data-route-status') && false !== strpos($admin_js, 'data-route-asset'),
-    'native admin script lacks status/asset filter handling'
+    false !== strpos($admin_js, 'data-route-config-filter')
+        && false !== strpos($admin_js, 'data-route-runtime-filter')
+        && false !== strpos($admin_js, 'data-route-asset'),
+    'native admin script lacks independent configuration/runtime/asset filters'
 );
 qa_211_assert(false !== strpos($admin_js, 'data-route-toggle-available'), 'empty-state add-route button has no native script handler');
 qa_211_assert(
-    false !== strpos($admin_js, "closest('[data-route-set-enabled]')"),
-    'summary enable/disable actions have no native script handler'
+    false !== strpos($admin_js, "hasAttribute('data-route-toggle')"),
+    'summary immediate enable/disable actions have no native script handler'
 );
+qa_211_assert(false !== strpos($admin_js, 'beforeunload'), 'dirty route values have no navigation warning');
+qa_211_assert(false !== strpos($admin_js, 'close_gateway'), 'last-enabled-route confirmation does not close the gateway explicitly');
+qa_211_assert(false !== strpos($admin_js, 'data-save-all'), 'global save-all action context is not reset');
+qa_211_assert(false !== strpos($admin_source, "current_user_can('manage_options')"), 'quick toggle lacks capability enforcement');
+qa_211_assert(false !== strpos($admin_source, "check_ajax_referer('jiuliu_crypto_toggle_route'"), 'quick toggle lacks nonce enforcement');
+qa_211_assert(false !== strpos($admin_source, "code' => 'last_enabled_route'"), 'quick toggle lacks explicit last-route gateway confirmation response');
 qa_211_assert(false === stripos($admin_js, 'jquery'), 'admin route manager unexpectedly depends on jQuery');
 
-fwrite(STDOUT, "OK: 2.1.1 compact admin route-manager and persistence contracts passed\n");
+$admin_css = file_get_contents(__DIR__ . '/../jiuliu-crypto-payment/assets/css/admin.css');
+qa_211_assert(false === strpos($admin_css, '.is-js [data-route-config]:not([open])'), 'closed route details are still completely hidden by CSS');
+
+fwrite(STDOUT, "OK: 2.1.2 configured/runtime route-manager, local saves and persistence contracts passed\n");

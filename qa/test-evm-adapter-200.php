@@ -3,7 +3,7 @@
 // Standalone strict EVM/ERC-20 adapter coverage for 2.1.1.
 
 define('ABSPATH', __DIR__ . '/');
-define('JIULIU_CRYPTO_VERSION', '2.1.1');
+define('JIULIU_CRYPTO_VERSION', '2.1.2');
 
 $GLOBALS['qa_rpc_queue'] = array();
 $GLOBALS['qa_rpc_calls'] = array();

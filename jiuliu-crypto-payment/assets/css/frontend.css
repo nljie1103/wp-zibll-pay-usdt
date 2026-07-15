@@ -114,8 +114,10 @@
 }
 
 .pay-payment.jiuliu_crypto .modal-pay-body .row-5 {
-    width: 390px;
-    max-width: calc(100vw - 24px);
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 390px;
+    min-width: 0;
 }
 
 .pay-payment.jiuliu_crypto .t-wechat,
@@ -129,9 +131,11 @@
 
 .pay-payment.jiuliu_crypto .jiuliu-crypto-route-label {
     display: inline-block;
+    max-width: 100%;
     margin-left: 9px;
     font-weight: 700;
     color: #26a17b;
+    overflow-wrap: anywhere;
 }
 
 .pay-payment.jiuliu_crypto .pay-notice .notice {
@@ -172,6 +176,7 @@
 .jiuliu-crypto-field > div {
     display: flex;
     align-items: center;
+    min-width: 0;
     gap: 8px;
 }
 
@@ -183,10 +188,13 @@
 
 .jiuliu-crypto-field code {
     min-width: 0;
+    max-width: 100%;
     flex: 1;
     padding: 6px 7px;
     border-radius: 5px;
     overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: normal;
     background: rgba(127, 127, 127, .12);
     color: inherit;
     font-size: 11px;
@@ -230,6 +238,9 @@
 }
 
 .jiuliu-crypto-tx-row input {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
     min-width: 0;
     flex: 1;
     font-family: monospace;
@@ -300,6 +311,152 @@
     font-weight: 700;
 }
 
+/*
+ * Zibll's payment modal is not a standard .modal-content tree. Its live DOM is
+ * #zibpay_modal > .modal-dialog > .pay-payment > .modal-pay-body. Keep every
+ * override behind the response-scoped class so other gateways remain untouched.
+ */
+#zibpay_modal.jiuliu-crypto-modal-active {
+    box-sizing: border-box;
+    align-items: center;
+    overflow: hidden;
+    padding-top: max(8px, env(safe-area-inset-top));
+    padding-right: max(8px, env(safe-area-inset-right)) !important;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+    padding-left: max(8px, env(safe-area-inset-left));
+}
+
+#zibpay_modal.jiuliu-crypto-modal-active .modal-dialog {
+    box-sizing: border-box;
+    width: calc(100vw - 16px) !important;
+    max-width: 430px !important;
+    min-width: 0;
+    max-height: calc(100vh - 16px);
+    max-height: calc(100dvh - 16px);
+    margin: 0 auto;
+}
+
+#zibpay_modal.jiuliu-crypto-modal-active .pay-payment,
+#zibpay_modal.jiuliu-crypto-modal-active .modal-content {
+    box-sizing: border-box;
+    position: relative;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    max-height: calc(100vh - 16px);
+    max-height: calc(100dvh - 16px);
+    overflow: hidden;
+}
+
+#zibpay_modal.jiuliu-crypto-modal-active .modal-pay-body {
+    box-sizing: border-box;
+    display: flex;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    max-height: calc(100vh - 16px);
+    max-height: calc(100dvh - 16px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: max(15px, env(safe-area-inset-bottom));
+}
+
+#zibpay_modal.jiuliu-crypto-modal-active .modal-pay-body > *,
+#zibpay_modal.jiuliu-crypto-modal-active .pay-qrcon,
+#zibpay_modal.jiuliu-crypto-modal-active .qrcon,
+#zibpay_modal.jiuliu-crypto-modal-active .more-html,
+#zibpay_modal.jiuliu-crypto-modal-active .jiuliu-crypto-details,
+#zibpay_modal.jiuliu-crypto-modal-active .jiuliu-crypto-field,
+#zibpay_modal.jiuliu-crypto-modal-active .jiuliu-crypto-field > div,
+#zibpay_modal.jiuliu-crypto-modal-active .jiuliu-crypto-manual,
+#zibpay_modal.jiuliu-crypto-modal-active .jiuliu-crypto-tx-form,
+#zibpay_modal.jiuliu-crypto-modal-active .jiuliu-crypto-tx-row {
+    box-sizing: border-box;
+    max-width: 100%;
+    min-width: 0;
+}
+
+#zibpay_modal.jiuliu-crypto-modal-active .pay-qrcon {
+    width: 100%;
+}
+
+#zibpay_modal.jiuliu-crypto-modal-active .pay-qrcon .qrcon {
+    padding-right: 16px;
+    padding-left: 16px;
+}
+
+#zibpay_modal.jiuliu-crypto-modal-active .pay-logo-header {
+    box-sizing: border-box;
+    min-width: 0;
+    padding-right: 48px;
+    flex-wrap: wrap;
+}
+
+#zibpay_modal.jiuliu-crypto-modal-active .jiuliu-crypto-modal-close {
+    box-sizing: border-box;
+    position: absolute !important;
+    top: 0;
+    right: 0;
+    display: flex;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    margin: 0;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+    z-index: 20;
+    transform: none;
+    touch-action: manipulation;
+}
+
+#zibpay_modal.jiuliu-crypto-modal-active .jiuliu-crypto-native-modal-close {
+    display: none !important;
+}
+
+#zibpay_modal.jiuliu-crypto-modal-active .jiuliu-crypto-modal-close:focus-visible {
+    outline: 2px solid #26a17b;
+    outline-offset: -3px;
+}
+
+#zibpay_modal.jiuliu-crypto-modal-active .pay-qrcode {
+    width: min(140px, 100%);
+    max-width: 100%;
+    height: auto;
+    min-height: 0;
+    aspect-ratio: 1 / 1;
+}
+
+#zibpay_modal.jiuliu-crypto-modal-active .pay-qrcode img {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    object-fit: contain;
+}
+
+#zibpay_modal.jiuliu-crypto-modal-active .jiuliu-crypto-field > div,
+#zibpay_modal.jiuliu-crypto-modal-active .jiuliu-crypto-tx-row {
+    flex-wrap: wrap;
+}
+
+#zibpay_modal.jiuliu-crypto-modal-active code,
+#zibpay_modal.jiuliu-crypto-modal-active input,
+#zibpay_modal.jiuliu-crypto-modal-active select,
+#zibpay_modal.jiuliu-crypto-modal-active button {
+    max-width: 100%;
+}
+
+#zibpay_modal.jiuliu-crypto-modal-active code,
+#zibpay_modal.jiuliu-crypto-modal-active .jiuliu-crypto-route-label,
+#zibpay_modal.jiuliu-crypto-modal-active .jiuliu-crypto-order-proof {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
 @media (max-width: 480px) {
     .jiuliu-crypto-selector-controls {
         grid-template-columns: 1fr;
@@ -324,5 +481,58 @@
     .jiuliu-crypto-order-proof-panel {
         margin-right: 10px;
         margin-left: 10px;
+    }
+
+    #zibpay_modal.jiuliu-crypto-modal-active .modal-pay-body {
+        padding-right: 8px;
+        padding-left: 8px;
+    }
+
+    #zibpay_modal.jiuliu-crypto-modal-active .pay-qrcon .qrcon {
+        padding-top: 16px;
+        padding-right: 12px;
+        padding-left: 12px;
+    }
+
+    #zibpay_modal.jiuliu-crypto-modal-active .pay-logo-header {
+        padding-right: 44px;
+    }
+
+    #zibpay_modal.jiuliu-crypto-modal-active .jiuliu-crypto-route-label {
+        display: block;
+        flex: 1 0 100%;
+        margin: 4px 0 0;
+    }
+
+    #zibpay_modal.jiuliu-crypto-modal-active .jiuliu-crypto-field > div,
+    #zibpay_modal.jiuliu-crypto-modal-active .jiuliu-crypto-tx-row {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    #zibpay_modal.jiuliu-crypto-modal-active .jiuliu-crypto-copy,
+    #zibpay_modal.jiuliu-crypto-modal-active .jiuliu-crypto-tx-row button {
+        width: 100%;
+    }
+
+    #zibpay_modal.jiuliu-crypto-modal-active input,
+    #zibpay_modal.jiuliu-crypto-modal-active select,
+    #zibpay_modal.jiuliu-crypto-modal-active textarea {
+        min-width: 0;
+        font-size: 16px;
+    }
+}
+
+@media (max-height: 520px) and (orientation: landscape) {
+    #zibpay_modal.jiuliu-crypto-modal-active {
+        align-items: flex-start;
+    }
+
+    #zibpay_modal.jiuliu-crypto-modal-active .modal-dialog,
+    #zibpay_modal.jiuliu-crypto-modal-active .pay-payment,
+    #zibpay_modal.jiuliu-crypto-modal-active .modal-content,
+    #zibpay_modal.jiuliu-crypto-modal-active .modal-pay-body {
+        max-height: calc(100vh - 16px);
+        max-height: calc(100dvh - 16px);
     }
 }

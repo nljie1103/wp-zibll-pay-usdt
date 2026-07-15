@@ -1,4 +1,4 @@
-# 2.1.1 QA
+# 2.1.2 QA
 
 所有检查直接读取同一仓库中的 `../jiuliu-crypto-payment/`，构建脚本也只打包这份源码。
 
@@ -10,7 +10,7 @@ PHP 语法：
 find jiuliu-crypto-payment qa -type f -name '*.php' -print0 | xargs -0 -n1 php -l
 ```
 
-2.1.1 功能契约：
+2.1.2 功能契约：
 
 ```bash
 for test in qa/test-*.php; do php "$test"; done
@@ -26,12 +26,12 @@ python qa/test-release-metadata.py
 确定性安装包：
 
 ```bash
-python scripts/build_release.py --output dist/jiuliu-crypto-payment-2.1.1.zip
-python qa/test-zip-structure.py dist/jiuliu-crypto-payment-2.1.1.zip
+python scripts/build_release.py --output dist/jiuliu-crypto-payment-2.1.2.zip
+python qa/test-zip-structure.py dist/jiuliu-crypto-payment-2.1.2.zip
 ```
 
 连续构建两次得到的 ZIP 必须逐字节一致。`test-zip-structure.py` 会检查文件名、单一插件根目录、路径安全、CRC、文件集合、规范化内容及版本号。
 
 `test-mysql-lock-interleaving.php` 是可选的真实 MariaDB 双连接锁测试。未设置 `QA_MYSQL_HOST` 时本地会跳过；GitHub Actions 会启动 MariaDB 10.11 执行。
 
-`test-admin-route-manager-211.php` 会真实渲染后台设置表单，并覆盖完整路线载入、禁用路线保留、默认折叠、秘密不回显、字段名唯一、地址缩略不污染真实值、脚本仅插件页加载、启停保存不丢配置，以及禁用 JavaScript 时原生 `details/summary` 仍可操作。
+`test-admin-route-manager-211.php` 会真实渲染 v2.1.2 后台设置表单，并覆盖配置/运行状态分离、停用路线保留、单路线动作、默认折叠、秘密不回显、字段名唯一、地址缩略不污染真实值、启停不丢配置，以及禁用 JavaScript 时原生 `details/summary` 仍可操作。

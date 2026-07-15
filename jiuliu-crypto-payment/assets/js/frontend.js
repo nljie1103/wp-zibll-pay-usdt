@@ -101,11 +101,8 @@
     }
 
     function updateGroupSummary(group) {
-        var choice = selectedChoice(group);
         var label = jiuliuCrypto.gatewayLabel || jiuliuCrypto.cryptoPayment || '数字货币支付';
-        if (choice) {
-            label += ' · ' + choice.asset + ' / ' + choice.network;
-        }
+        var choice = selectedChoice(group);
         if (group.$label.text() !== label) {
             group.$label.text(label);
         }
@@ -307,6 +304,7 @@
             }
             event.preventDefault();
             event.stopPropagation();
+            modalOpener = this;
             group.$panel.prop('hidden', false);
             group.$unified.attr('aria-expanded', 'true');
             if (!group.locked) {
@@ -405,6 +403,145 @@
         }, 0);
     }
 
+    var cryptoModalSelector = '#zibpay_modal';
+    var cryptoModalClass = 'jiuliu-crypto-modal-active';
+    var modalStateQueued = false;
+    var modalOpener = null;
+
+    function cryptoModal() {
+        return $(cryptoModalSelector);
+    }
+
+    function ensureModalCloseButton($modal) {
+        var $payment = $modal.find('.pay-payment').first();
+        var $nativeClose = $payment.find('.pay-qrcon [data-dismiss="modal"]').first();
+        if (!$payment.length || !$nativeClose.length) {
+            return $();
+        }
+        $nativeClose.addClass('jiuliu-crypto-native-modal-close');
+        var $close = $payment.children('.jiuliu-crypto-modal-close').first();
+        if (!$close.length) {
+            $close = $('<button></button>')
+                .addClass('jiuliu-crypto-modal-close but cir hollow nowave')
+                .append($('<span></span>').attr('aria-hidden', 'true').text('\u00d7'))
+                .prependTo($payment);
+        }
+        $close
+            .attr({
+                'type': 'button',
+                'aria-label': '关闭支付窗口',
+                'title': '关闭支付窗口'
+            });
+        return $close;
+    }
+
+    function setCryptoModalActive(active) {
+        var $modal = cryptoModal();
+        if (!$modal.length) {
+            return;
+        }
+        if (active) {
+            var wasActive = $modal.hasClass(cryptoModalClass);
+            $modal.addClass(cryptoModalClass);
+            if (!wasActive) {
+                $modal.find('.modal-pay-body').scrollTop(0);
+            }
+            ensureModalCloseButton($modal);
+            window.setTimeout(function () {
+                if (!$modal.hasClass(cryptoModalClass) || !$modal.hasClass('in')) {
+                    return;
+                }
+                var $close = ensureModalCloseButton($modal);
+                if ($close.length) {
+                    $close.trigger('focus');
+                }
+            }, 0);
+            return;
+        }
+        $modal.removeClass(cryptoModalClass).removeData('jiuliuCryptoHiding');
+        $modal.find('.jiuliu-crypto-modal-close').remove();
+        $modal.find('.jiuliu-crypto-native-modal-close').removeClass('jiuliu-crypto-native-modal-close');
+    }
+
+    function hideCryptoModal() {
+        var $modal = cryptoModal();
+        if (!$modal.length || !$modal.hasClass(cryptoModalClass) || $modal.data('jiuliuCryptoHiding')) {
+            return;
+        }
+        $modal.data('jiuliuCryptoHiding', true);
+        // Use Zibll/Bootstrap's normal UI hide path. This function deliberately
+        // does not call any order, invoice, cancellation or monitoring endpoint.
+        if ($.isFunction($modal.modal)) {
+            $modal.modal('hide');
+        } else {
+            $modal.removeData('jiuliuCryptoHiding');
+        }
+    }
+
+    function responseIsCrypto(response, responseMethod) {
+        var methods = $.isArray(jiuliuCrypto.methods) ? jiuliuCrypto.methods : [];
+        return !!(response && response.jiuliu_crypto) || methods.indexOf(responseMethod) !== -1;
+    }
+
+    function queueModalStateCheck() {
+        if (modalStateQueued) {
+            return;
+        }
+        modalStateQueued = true;
+        window.setTimeout(function () {
+            modalStateQueued = false;
+            var $modal = cryptoModal();
+            if ($modal.hasClass(cryptoModalClass) && !$modal.find('.jiuliu-crypto-details').length) {
+                setCryptoModalActive(false);
+                $modal.find('.pay-payment').removeClass('jiuliu_crypto');
+                $modal.find('.jiuliu-crypto-route-label').remove();
+            }
+        }, 0);
+    }
+
+    function clickedMethod($source) {
+        if ($source.hasClass('payment-method-radio')) {
+            return String($source.attr('data-value') || '');
+        }
+        return String($source.attr('data-jiuliu-method') || $source.find('.jiuliu-crypto-method-marker[data-jiuliu-method]').first().attr('data-jiuliu-method') || '');
+    }
+
+    function bindCryptoModalEvents() {
+        $('body')
+            .off('.jiuliuCryptoModal')
+            .on('click.jiuliuCryptoModal', cryptoModalSelector + '.' + cryptoModalClass, function (event) {
+                if (event.target !== this) {
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                hideCryptoModal();
+            })
+            .on('click.jiuliuCryptoModal', cryptoModalSelector + '.' + cryptoModalClass + ' .jiuliu-crypto-modal-close', function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+                hideCryptoModal();
+            })
+            .on('click.jiuliuCryptoModal', '.modal-backdrop', function (event) {
+                var $modal = cryptoModal();
+                if (event.target !== this || !$modal.hasClass(cryptoModalClass) || !$modal.hasClass('in')) {
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                hideCryptoModal();
+            });
+
+        $(document)
+            .off('keydown.jiuliuCryptoModal')
+            .on('keydown.jiuliuCryptoModal', function (event) {
+                if ((27 === event.which || 'Escape' === event.key) && cryptoModal().hasClass(cryptoModalClass)) {
+                    event.preventDefault();
+                    hideCryptoModal();
+                }
+            });
+    }
+
     $('body').on('click', '.jiuliu-crypto-copy', function () {
         var $button = $(this);
         var text = String($button.data('copy') || '');
@@ -465,10 +602,10 @@
         if (!response.jiuliu_crypto && !responseMethod) {
             return;
         }
-        var $payment = $('#zibpay_modal .pay-payment');
-        var methods = $.isArray(jiuliuCrypto.methods) ? jiuliuCrypto.methods : [];
-        if (response.jiuliu_crypto || methods.indexOf(responseMethod) !== -1) {
+        var $payment = $(cryptoModalSelector + ' .pay-payment');
+        if (responseIsCrypto(response, responseMethod)) {
             $payment.addClass('jiuliu_crypto');
+            setCryptoModalActive(true);
             window.setTimeout(function () {
                 $payment.find('.pay-notice .notice').text(jiuliuCrypto.waiting);
                 var label = $payment.find('.jiuliu-crypto-details').data('route-label') || response.jiuliu_crypto_label || '';
@@ -480,6 +617,7 @@
                 refreshSelectorLocks(true);
             }, 0);
         } else {
+            setCryptoModalActive(false);
             $payment.removeClass('jiuliu_crypto');
             $payment.find('.jiuliu-crypto-route-label').remove();
         }
@@ -489,21 +627,33 @@
         if ($(this).hasClass('jiuliu-crypto-unified-method')) {
             return;
         }
+        var method = clickedMethod($(this));
+        if (!method || !routeChoiceByMethod[method]) {
+            setCryptoModalActive(false);
+        }
         window.setTimeout(function () {
             eachUnifiedGroup(syncGroup);
         }, 0);
     });
 
     $('body').on('hidden.bs.modal', '#zibpay_modal', function () {
+        setCryptoModalActive(false);
+        $(this).find('.pay-payment').removeClass('jiuliu_crypto');
+        $(this).find('.jiuliu-crypto-route-label').remove();
         eachUnifiedGroup(function (group) {
             setGroupLocked(group, false);
             syncGroup(group);
         });
+        if (modalOpener && $.contains(document, modalOpener)) {
+            $(modalOpener).trigger('focus');
+        }
+        modalOpener = null;
     }).on('shown.bs.modal', '#zibpay_modal', function () {
         refreshSelectorLocks();
     });
 
     $(function () {
+        bindCryptoModalEvents();
         initializeUnifiedSelectors();
         if (window.MutationObserver && document.body) {
             new window.MutationObserver(function (mutations) {
@@ -524,6 +674,7 @@
                 });
                 if (relevant) {
                     queueSelectorRefresh();
+                    queueModalStateCheck();
                 }
             }).observe(document.body, {
                 childList: true,
